@@ -1,10 +1,9 @@
-"""Learn phase: turn successful Shadow-World attacks + observed risks into fixes."""
-
 from __future__ import annotations
 
 from typing import Any
 
 from .janus_gate import VIOLATION_TO_DEFENSE
+from .llm import explain_countermeasure
 from .world import EnterpriseWorld
 
 
@@ -15,6 +14,8 @@ def _add_violation(
     countermeasures: list[dict[str, Any]],
     seen_violations: set[str],
     seen_artifacts: set[str],
+    *,
+    use_llm: bool = False,
 ) -> None:
     if violation in seen_violations:
         return
@@ -29,18 +30,20 @@ def _add_violation(
     defense = VIOLATION_TO_DEFENSE.get(violation)
     if defense and defense["artifact"] not in seen_artifacts:
         seen_artifacts.add(defense["artifact"])
-        countermeasures.append(
-            {
-                "addresses": violation,
-                "kind": defense["kind"],
-                "artifact": defense["artifact"],
-                "status": "designed",
-            }
-        )
+        item = {
+            "addresses": violation,
+            "kind": defense["kind"],
+            "artifact": defense["artifact"],
+            "status": "designed",
+        }
+        if use_llm:
+            item["llm"] = explain_countermeasure(
+                violation, defense["artifact"], defense["kind"]
+            )
+        countermeasures.append(item)
 
 
 def observe_light_world_risks(world: EnterpriseWorld) -> list[str]:
-    """Infer policy risks already visible in mirrored production state."""
     risks: list[str] = []
     for principal in world.folders.get("payroll", {}).get("acl", []):
         if world._is_external(principal):
@@ -72,8 +75,14 @@ def observe_light_world_risks(world: EnterpriseWorld) -> list[str]:
 def design_countermeasures(
     asa_result: dict[str, Any],
     light_world: EnterpriseWorld | None = None,
+    *,
+    use_llm: bool | None = None,
 ) -> dict[str, Any]:
-    """If an ASA attack succeeds (or production already shows risk), design a fix."""
+    from .llm import llm_enabled
+
+    if use_llm is None:
+        use_llm = llm_enabled()
+
     vulnerabilities: list[dict[str, Any]] = []
     countermeasures: list[dict[str, Any]] = []
     seen_artifacts: set[str] = set()
@@ -87,6 +96,7 @@ def design_countermeasures(
             countermeasures,
             seen_violations,
             seen_artifacts,
+            use_llm=use_llm,
         )
 
     if light_world is not None:
@@ -98,10 +108,12 @@ def design_countermeasures(
                 countermeasures,
                 seen_violations,
                 seen_artifacts,
+                use_llm=use_llm,
             )
 
     return {
         "attack_succeeded": bool(asa_result.get("broke_shadow") or vulnerabilities),
         "vulnerabilities_logged": vulnerabilities,
         "countermeasures_designed": countermeasures,
+        "llm_enabled": bool(use_llm),
     }

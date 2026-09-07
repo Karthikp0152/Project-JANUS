@@ -1,12 +1,3 @@
-"""
-Project Janus web console — production Light World + ASWA control plane.
-
-Run:
-  python run_web.py
-Open:
-  http://127.0.0.1:8765
-"""
-
 from __future__ import annotations
 
 import time

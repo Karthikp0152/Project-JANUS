@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-"""Runnable baseline for Project Janus (ASWA): Duplicate -> Attack -> Learn -> Deploy."""
-
 from __future__ import annotations
 
 import argparse

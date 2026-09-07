@@ -1,9 +1,3 @@
-"""Adversarial Synthesis Agent: learns only inside the Shadow World.
-
-The agent searches a closed catalog of simulator tools. It does not emit
-network payloads, exploits, or anything that can leave the sandbox.
-"""
-
 from __future__ import annotations
 
 import random
@@ -11,7 +5,6 @@ from typing import Any
 
 from .world import EnterpriseWorld
 
-# Closed, named simulator actions. These are policy probes, not exploits.
 ACTION_CATALOG: list[dict[str, Any]] = [
     {
         "id": "grant_payroll_external",
@@ -75,8 +68,6 @@ ACTION_CATALOG: list[dict[str, Any]] = [
 
 
 class AdversarialSynthesisAgent:
-    """Tiny tabular Q-learner rewarded only for Shadow-World policy breaks."""
-
     def __init__(self, episodes: int = 20, epsilon: float = 0.3, seed: int = 7) -> None:
         self.episodes = episodes
         self.epsilon = epsilon
@@ -92,7 +83,6 @@ class AdversarialSynthesisAgent:
 
         for _ in range(self.episodes):
             shadow = shadow_template.snapshot()
-            # Fresh ticket comments so close-without-comment remains discoverable.
             if "T-104" in shadow.tickets:
                 shadow.tickets["T-104"] = {
                     **shadow.tickets["T-104"],

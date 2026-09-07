@@ -1,5 +1,3 @@
-"""Reality Mirroring Engine: sanitize live telemetry and clone it into a Shadow World."""
-
 from __future__ import annotations
 
 import re
@@ -26,12 +24,9 @@ def sanitize_value(value: Any) -> Any:
 
 
 class RealityMirroringEngine:
-    """Duplicates Light-World state plus telemetry into an isolated sandbox."""
-
     def mirror(self, light: EnterpriseWorld, telemetry: list[dict[str, Any]]) -> dict[str, Any]:
         clean_telemetry = sanitize_value(deepcopy(telemetry))
         shadow = light.snapshot()
-        # Restricted file bodies never cross into the sandbox; labels and names do.
         for meta in shadow.files.values():
             meta["contents"] = "[SANITIZED]"
         applied = []

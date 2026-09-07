@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-"""Start the Project Janus localhost web console."""
-
 from __future__ import annotations
 
 import argparse

@@ -1,5 +1,3 @@
-"""Acme Corp production Light World: FastAPI ops platform with live telemetry."""
-
 from __future__ import annotations
 
 import secrets

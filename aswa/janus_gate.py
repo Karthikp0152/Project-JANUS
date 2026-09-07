@@ -1,5 +1,3 @@
-"""Janus Gate: one-way valve between Light World and Shadow World."""
-
 from __future__ import annotations
 
 from typing import Any

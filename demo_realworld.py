@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""
-Real-world ASWA demo against a live Acme Ops production API.
-
-Blueprint lifecycle:
-  Ingest & Sanitize -> Hydrate & Clone -> Synthesize & Attack -> Compile & Patch
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -29,7 +22,7 @@ def wait_healthy(base_url: str, timeout: float = 20.0) -> None:
             if r.status_code == 200:
                 return
             last_err = f"HTTP {r.status_code}"
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             last_err = str(exc)
         time.sleep(0.25)
     raise RuntimeError(f"production API not healthy at {base_url}: {last_err}")

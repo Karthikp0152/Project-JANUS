@@ -1,5 +1,3 @@
-"""Adapter: pull live Acme telemetry/state into ASWA, push Gate patches back."""
-
 from __future__ import annotations
 
 from typing import Any
@@ -90,7 +88,6 @@ def world_from_snapshot(snapshot: dict[str, Any]) -> EnterpriseWorld:
             "sensitivity": meta.get("sensitivity", "internal"),
             "contents": "[LIVE_CONTENTS_OMITTED]",
         }
-    # Restore demo restricted content label for shadow policy checks.
     if "q4_salary.xlsx" in files:
         files["q4_salary.xlsx"]["contents"] = "alex,$182000;priya,$165000"
         files["q4_salary.xlsx"]["sensitivity"] = "restricted"

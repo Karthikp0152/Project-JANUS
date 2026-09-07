@@ -1,5 +1,3 @@
-"""Project Janus baseline: Duplicate -> Attack -> Learn -> Deploy."""
-
 from __future__ import annotations
 
 from typing import Any
@@ -20,7 +18,6 @@ def run_janus(
     light = world or EnterpriseWorld.demo()
     light_before = light.snapshot()
 
-    # 1) DUPLICATE — high-fidelity digital twin via RME
     rme = RealityMirroringEngine()
     mirrored = rme.mirror(light, telemetry)
     shadow = mirrored["shadow"]
@@ -34,7 +31,6 @@ def run_janus(
         "digital_twin_ready": True,
     }
 
-    # 2) ATTACK — ASAs run only inside the Shadow-World Sandbox
     asa = AdversarialSynthesisAgent(episodes=asa_episodes, seed=7)
     asa_result = asa.synthesize(shadow, n=n)
     attack = {
@@ -49,7 +45,6 @@ def run_janus(
         "best_trace": asa_result["best_trace"],
     }
 
-    # 3) LEARN — log vulnerabilities and design countermeasures
     learn_result = design_countermeasures(asa_result, light_world=light)
     learn = {
         "phase": "learn",
@@ -57,7 +52,6 @@ def run_janus(
         **learn_result,
     }
 
-    # 4) DEPLOY — Janus Gate validates fixes and mutates Light-World defenses only
     gate = JanusGate()
     export = gate.validate_and_export(learn_result, asa_result, mirrored["sanitized_telemetry"])
     applied_defenses = []
@@ -92,7 +86,6 @@ def run_janus(
         "attack": attack,
         "learn": learn,
         "deploy": deploy,
-        # Compatibility aliases used by earlier tests / CLI
         "rme": duplicate,
         "asa": attack,
         "janus_gate": {

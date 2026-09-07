@@ -30,7 +30,7 @@ Desktop.ini
 examples/last_run.json
 examples/last_safe_run.json
 examples/last_live_run.json
-examples/baseline_console_output.txt
+examples/last_llm_run.json
 
 # Secrets / env
 .env

@@ -1,10 +1,7 @@
-"""Demo use-case catalog for the Janus console."""
-
 from __future__ import annotations
 
 from typing import Any
 
-# Metadata shown in the UI / README
 SCENARIO_CATALOG: list[dict[str, str]] = [
     {
         "id": "safe_ticket",
@@ -141,14 +138,12 @@ def run_scenario(state, scenario_id: str) -> list[dict[str, Any]]:
         ]
 
     if scenario_id == "messy_ticket_close":
-        # Ensure no comments so closing is a policy break if defenses later require notes
         state.tickets["T-104"]["comments"] = []
         state.tickets["T-104"]["status"] = "open"
         state.emit("ticket_update", ticket_id="T-104", status="open", comment="")
         return [_try_close(state, "T-104")]
 
     if scenario_id == "outsider_hr_keys":
-        # payroll stands in for HR-sensitive ACL in the toy world
         return [_try_grant(state, "payroll", "temp.hire@contractor.net")]
 
     if scenario_id == "internal_status_ok":

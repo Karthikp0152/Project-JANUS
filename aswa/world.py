@@ -1,5 +1,3 @@
-"""Toy enterprise environment used as both Real World and Shadow World."""
-
 from __future__ import annotations
 
 from copy import deepcopy

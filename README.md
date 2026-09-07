@@ -47,6 +47,28 @@ Open **http://127.0.0.1:8765**
 3. Click a **Probe** button to confirm production is hardened  
 
 Local demo token for web API only: `Bearer prod-secret-abc`
+
+### Optional: OpenAI LLM upgrades
+
+The graded baseline does **not** need an API key. For OpenAI LLM features:
+
+1. Copy `.env.example` → `.env`
+2. Set `OPENAI_API_KEY` in **`.env`** only
+3. Optionally set `OPENAI_BASE_URL` and `OPENAI_MODEL`
+4. Run:
+
+```bash
+python -m pip install -r requirements.txt
+python scripts/test_openai_llm.py
+python scripts/demo_llm_aswa.py --input examples/test_unsafe.json
+```
+
+OpenAI LLM roles:
+
+- **Adversary:** proposes an N-step shadow plan using only the closed action catalog
+- **Learn:** writes operator-facing rationales for each designed defense
+- **Briefing:** summarizes Duplicate → Attack → Learn → Deploy for a security operator
+
 ---
 
 ## Use cases in the console
@@ -74,6 +96,7 @@ webapp.py             FastAPI console + production control plane
 run_web.py            Start the web demo
 run_baseline.py       Offline baseline runner
 demo_realworld.py     Scripted live-API demo
+scripts/              OpenAI LLM smoke test and demo
 examples/             Sample inputs, run notes, baseline screenshot
 tests/                Baseline tests
 docs/                 Capstone proposal and blueprint
