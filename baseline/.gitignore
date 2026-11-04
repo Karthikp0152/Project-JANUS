@@ -41,3 +41,7 @@ examples/last_llm_run.json
 dist/
 build/
 *.egg-info/
+
+# Local evaluation outputs
+results/cache/
+last_run*.json
