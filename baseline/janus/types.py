@@ -148,7 +148,7 @@ class RunResult(TypedDict):
     rules_deployed: list[DefenseRule]
     gate_log: list[GateDecision]
     exports: dict[str, Any]        # EVERYTHING that crossed the Gate: {"rules": [...], "briefing": str|None}
-    artifacts: dict[str, Any]      # scanner input: {"twin_dump": str, "llm_prompts": [str], "logs": [str]}
+    artifacts: dict[str, Any]      # scanner input: {"twin_dump": str, "llm_prompts": [str], "logs": [str], "probe_values": [str]}
     tokens: TokenUse
     cost_usd: float
     latency_s: float
