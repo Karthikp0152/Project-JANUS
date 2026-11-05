@@ -96,6 +96,27 @@ def test_unbuilt_robustness_split():
         world_gen.generate("robust", 1)
 
 
+@pytest.mark.parametrize("seed", [598, 904])
+def test_cli_exports_match_generator_and_are_byte_reproducible(tmp_path, seed):
+    arguments = ["--export", "--output", str(tmp_path), "--seed", str(seed)]
+    assert world_gen.main(arguments) == 0
+    counts = {"seen": 12, "heldout": 12, "benign": 6}
+    expected_names = {"README.md", *(f"{split}.json" for split in counts)}
+    assert {path.name for path in tmp_path.iterdir()} == expected_names
+    first_bytes = {name: (tmp_path / name).read_bytes() for name in expected_names}
+    for split, count in counts.items():
+        exported = json.loads(first_bytes[f"{split}.json"])
+        assert len(exported) == count
+        assert exported == world_gen.generate(split, count, seed)
+    readme = first_bytes["README.md"].decode("utf-8")
+    assert f"seed {seed}" in readme
+    assert re.search(r"horizon\s+N\s*=\s*3", readme, re.IGNORECASE)
+    for split, count in counts.items():
+        assert re.search(rf"\|\s*{split}\s*\|\s*{count}\s*\|", readme)
+    assert world_gen.main(arguments) == 0
+    assert {name: (tmp_path / name).read_bytes() for name in expected_names} == first_bytes
+
+
 def test_invalid_split_and_negative_count():
     with pytest.raises(ValueError):
         world_gen.generate("missing", 1)

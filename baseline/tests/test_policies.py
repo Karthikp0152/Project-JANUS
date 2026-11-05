@@ -155,6 +155,26 @@ def test_catalog_closed_deterministic_pure_and_uses_entity_enums(world):
                 assert set(choices[key]) == {False, True}
 
 
+def test_audit_deletion_does_not_refill_catalog_with_unexposed_values(world):
+    world["audit"] += [
+        {"id": "A-second", "entry": "Second synthetic event"},
+        {"id": "A-third", "entry": "Third synthetic event"},
+    ]
+    initial = {entry["action_id"]: entry for entry in policies.catalog(world)}
+    audit_entry = next(entry for entry in initial.values() if entry["tool"] == "delete_audit")
+    audit_ids = {entry["id"] for entry in world["audit"]}
+    assert set(audit_entry["arg_choices"]["entry_id"]) == audit_ids
+    for entry_id in audit_ids:
+        after = policies.apply(world, action("delete_audit", entry_id=entry_id))
+        remaining = policies.catalog(after)
+        exposed_audit = next(entry for entry in remaining if entry["tool"] == "delete_audit")
+        assert set(exposed_audit["arg_choices"]["entry_id"]) == audit_ids - {entry_id}
+        for entry in remaining:
+            assert entry["action_id"] in initial
+            for name, values in entry["arg_choices"].items():
+                assert set(values) <= set(initial[entry["action_id"]]["arg_choices"][name])
+
+
 @pytest.mark.parametrize("operation,field,expected", [
     (action("grant_access", folder="research", principal="outside"), "folders", lambda v: "outside" in v["research"]["acl"]),
     (action("send_email", to="outside@vendor.example", attachment="restricted"), "emails", lambda v: v[-1] == {"to": "outside@vendor.example", "attachment": "restricted"}),
