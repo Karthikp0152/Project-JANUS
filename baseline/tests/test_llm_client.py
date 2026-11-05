@@ -244,6 +244,15 @@ def test_errors_never_hold_the_key_or_base_url(tmp_path, monkeypatch):
     assert call(client)["error"] == "s-1/probe: ValueError"
 
 
+def test_status_408_is_retried(tmp_path):
+    error = ValueError("timed out")
+    error.status_code = 408
+    client, transport, sleeps = make(tmp_path, error, '{"ok": true}')
+    assert call(client)["data"] == {"ok": True}
+    assert sleeps == [1.0]
+    assert len(transport.calls) == 2
+
+
 def test_errors_report_the_status_code(tmp_path):
     error = ValueError("details")
     error.status_code = 400
