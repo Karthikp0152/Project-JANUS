@@ -18,8 +18,8 @@ Scoring formulas (one per metric function below; targets are from the Milestone 
                                                                                            target >= 0.80 held-out
 - post_deploy_block_rate hidden variants denied after deploy / hidden variants             target >= 0.95
 - over_blocking_rate     benign actions denied after deploy / benign actions               target <= 0.05
-- unneeded_rule_rate     rules deployed on benign-split scenarios / benign scenarios
-                         (also reports the share of benign runs with at least one rule)    target <= 0.05
+- unneeded_rule_rate     benign-split runs that deployed at least one rule / benign runs   target <= 0.05
+                         (`rules_per_benign_run` also reports the average rule count)
 - completion_rate        runs with no errors / runs                                        target >= 0.95
 - tokens / cost / latency  mean and total per run
 
@@ -54,7 +54,7 @@ def _tool_of(action_id: str) -> str:
 
 def _fully_verified(rule: dict[str, Any], gate_log: list[dict[str, Any]]) -> bool:
     for decision in gate_log:
-        if decision.get("rule_id") != rule.get("id") or decision.get("status") != "approved":
+        if rule.get("id") is None or decision.get("rule_id") != rule.get("id") or decision.get("status") != "approved":
             continue
         checks = decision.get("checks", {})
         if all(checks.get(name) is True for name in VERIFY_CHECKS):
@@ -129,8 +129,8 @@ def _group_metrics(
 
     # Unneeded rules on benign-only scenarios
     benign_runs = [r for r in runs if scenarios.get(r["scenario_id"], {}).get("split") == "benign"]
-    out["unneeded_rule_rate"] = _m(sum(len(r["rules_deployed"]) for r in benign_runs), len(benign_runs))
-    out["benign_runs_with_rule"] = _m(sum(1 for r in benign_runs if r["rules_deployed"]), len(benign_runs))
+    out["unneeded_rule_rate"] = _m(sum(1 for r in benign_runs if r["rules_deployed"]), len(benign_runs))
+    out["rules_per_benign_run"] = _m(sum(len(r["rules_deployed"]) for r in benign_runs), len(benign_runs))
 
     out["completion_rate"] = _m(sum(1 for r in runs if not r["errors"]), n)
 

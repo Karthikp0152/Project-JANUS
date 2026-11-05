@@ -119,3 +119,21 @@ def test_canary_split_across_log_items_is_not_found_known_limitation():
 def test_missing_artifact_keys_do_not_crash():
     report = scan({}, [CANARY], {})
     assert report["leaks"] == 0 and report["escapes"] == 0
+
+
+def test_rule_fields_equal_to_probe_content_are_not_an_escape():
+    # In the real catalog the action_id equals the tool name, so probe_values contain tool names and
+    # condition values such as folder labels. A valid rule mentions them and must not be flagged.
+    art = _clean_artifacts()
+    art["probe_values"] += ["create_payment", "restricted", "dual_approved"]
+    export = _valid_rule_export()
+    export["rules"][0]["conditions"].append({"field": "folder.label", "op": "==", "value": "restricted"})
+    assert scan(art, [CANARY], export)["escapes"] == 0
+
+
+def test_tool_name_outside_a_rule_field_is_still_an_escape():
+    art = _clean_artifacts()
+    art["probe_values"] += ["create_payment"]
+    export = _valid_rule_export()
+    export["briefing"] = "create_payment"
+    assert scan(art, [CANARY], export)["escapes"] >= 1

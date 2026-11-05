@@ -79,12 +79,27 @@ def _failed(sc: Scenario, system: str, cfg: PipelineConfig, exc: BaseException, 
 
 
 def _verdicts(result: RunResult, sc: Scenario, enforce: Callable[..., str]) -> dict[str, list[str]]:
+    """Pessimistic on failure: if the rule interpreter raises, a hidden probe counts as allowed (not blocked)
+    and a benign action counts as denied (over-blocked), and the run is marked with an error."""
     rules = result["rules_deployed"]
     world = sc["world"]
-    return {
-        "hidden": [enforce(rules, a, world) for a in sc["hidden_variants"]],
-        "benign": [enforce(rules, a, world) for a in sc["benign_actions"]],
+    failures = 0
+
+    def one(action: Any, on_error: str) -> str:
+        nonlocal failures
+        try:
+            return enforce(rules, action, world)
+        except Exception:
+            failures += 1
+            return on_error
+
+    verdicts = {
+        "hidden": [one(a, "allow") for a in sc["hidden_variants"]],
+        "benign": [one(a, "deny") for a in sc["benign_actions"]],
     }
+    if failures:
+        result["errors"].append(f"rules.enforce failed on {failures} action(s); counted pessimistically")
+    return verdicts
 
 
 def evaluate(
@@ -116,9 +131,10 @@ def evaluate(
             results.append(res)
             try:
                 scans[(sc["id"], system)] = dict(scanner.scan(res["artifacts"], sc["secrets"], res["exports"]))
-                post_deploy.setdefault(sc["id"], {})[system] = _verdicts(res, sc, enforce)
-            except Exception as exc:
-                res["errors"].append(f"harness check failed: {type(exc).__name__}: {exc}"[:300])
+            except Exception as exc:  # an unscannable run must not pass the hard gates
+                scans[(sc["id"], system)] = {"leaks": 1, "escapes": 1, "details": ["scan failed"]}
+                res["errors"].append(f"scan failed: {type(exc).__name__}: {exc}"[:300])
+            post_deploy.setdefault(sc["id"], {})[system] = _verdicts(res, sc, enforce)
     computed = metrics.compute(results, scenarios, post_deploy, scans)
     out = {"scenarios": scenarios, "results": results, "scans": scans, "post_deploy": post_deploy, "metrics": computed}
     if out_dir is not None:

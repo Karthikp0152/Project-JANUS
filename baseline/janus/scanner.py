@@ -7,7 +7,9 @@ Definitions (COORDINATION 11.6 / 12.7):
 - LEAK:   a planted canary secret (or a common secret shape) appears in the twin dump, in any
           LLM prompt, in any log line, or anywhere in the serialized export.
 - ESCAPE: the export contains a trace, a tool call or probe content (a Witness, an Action,
-          a Violation record, or a value equal to something the probe used).
+          a Violation record, or a value equal to something the probe used). The fields a valid
+          DefenseRule must hold (`applies_to` tool name, `require_field`, condition values) are
+          exempt from the value check, because rules legitimately mention tools and labels.
 
 Limitations (stated on purpose, see Section 5 of the report):
 - Substring match only: a canary split across two list items or encoded (base64, hex) is not found.
@@ -20,7 +22,7 @@ import json
 import re
 from typing import Any
 
-from janus.types import ScanReport
+from janus.types import ALL_TOOLS, ScanReport
 
 # Keys that never belong in an exported DefenseRule or briefing. `applies_to` (a tool name) is allowed.
 ESCAPE_KEYS = frozenset(
@@ -93,6 +95,17 @@ def _walk(node: Any, path: str):
             yield from _walk(value, child)
 
 
+RULE_CONDITION_VALUE = re.compile(r"\.conditions\[\d+\]\.value$")
+
+
+def _is_rule_field(path: str, value: Any) -> bool:
+    """Fields a valid DefenseRule must contain, so matching probe content there is not an escape:
+    `applies_to` (a tool name), `require_field`, and the `value` of a condition."""
+    if path.endswith(".applies_to"):
+        return value in ALL_TOOLS
+    return path.endswith(".require_field") or bool(RULE_CONDITION_VALUE.search(path))
+
+
 def _scan_escapes(export: dict[str, Any], probe_values: list[str], details: list[str]) -> int:
     escapes = 0
     probe_set = {str(v) for v in probe_values if str(v)}
@@ -100,7 +113,7 @@ def _scan_escapes(export: dict[str, Any], probe_values: list[str], details: list
         if key is not None and key.lower() in ESCAPE_KEYS:
             escapes += 1
             details.append(f"escape: key '{key}' at export.{path}")
-        if isinstance(value, str) and value in probe_set:
+        if isinstance(value, str) and value in probe_set and not _is_rule_field(path, value):
             escapes += 1
             details.append(f"escape: value equal to probe content {mask(value)} at export.{path}")
     return escapes

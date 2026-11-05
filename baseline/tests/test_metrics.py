@@ -131,8 +131,27 @@ def test_post_deploy_block_and_over_blocking(out):
 
 def test_unneeded_rule_rate_only_counts_benign_split(out):
     assert out["overall"]["P"]["unneeded_rule_rate"] == {"value": 1.0, "num": 1, "den": 1}
-    assert out["overall"]["P"]["benign_runs_with_rule"] == {"value": 1.0, "num": 1, "den": 1}
+    assert out["overall"]["P"]["rules_per_benign_run"] == {"value": 1.0, "num": 1, "den": 1}
     assert out["by_split"]["seen"]["P"]["unneeded_rule_rate"]["den"] == 0
+
+
+def test_unneeded_rule_rate_is_a_share_of_runs_not_a_rule_count():
+    scen = [_scenario("b1", "benign", []), _scenario("b2", "benign", [])]
+    res = [
+        _run("b1", "P", rules=[_rule("a", "P1", "grant_access"), _rule("b", "P2", "send_email"),
+                               _rule("c", "P3", "create_payment")]),
+        _run("b2", "P"),
+    ]
+    got = compute(res, scen, {})["overall"]["P"]
+    assert got["unneeded_rule_rate"] == {"value": 0.5, "num": 1, "den": 2}  # 1 of 2 runs, never above 1
+    assert got["rules_per_benign_run"] == {"value": 1.5, "num": 3, "den": 2}
+
+
+def test_a_rule_without_an_id_is_never_counted_as_verified():
+    rule = {"addresses_policy": "P1", "applies_to": "grant_access"}  # no id
+    run = _run("s1", "P", rules=[rule], gate=[{"status": "approved", "checks": {k: True for k in V}}])
+    got = compute([run], SCEN, {})["overall"]["P"]["unverified_deploy_rate"]
+    assert got == {"value": 1.0, "num": 1, "den": 1}
 
 
 def test_completion_rate(out):
