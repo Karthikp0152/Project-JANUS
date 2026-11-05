@@ -18,6 +18,9 @@ Neither function changes its inputs. Invalid tool/argument shapes raise ValueErr
 from __future__ import annotations
 
 import copy
+from collections import deque
+from itertools import product
+import json
 import math
 from typing import Any
 
@@ -34,6 +37,8 @@ ACTION_ARGS = {
     "update_vendor_bank": ("vendor", "bank", "verification_ticket"),
     "delete_audit": ("entry_id",),
 }
+
+MAX_SEARCH_SEQUENCES = 200_000
 
 
 def _args(action: Action) -> tuple[str, dict[str, Any]]:
@@ -198,4 +203,75 @@ def apply(world: dict[str, Any], action: Action) -> dict[str, Any]:
 
 
 def reachable_violations(scenario: Scenario, n: int) -> list[Violation]:
-    return []
+    """Exact reachable label set up to n actions, with zero-based earliest steps.
+
+    C catalog actions give C + C**2 + C**3 raw sequences at N=3 (219,660
+    at our C<=60). Expand every enum combination, then quotient states by the
+    mutable fields read by the configured oracle: ticket comment presence (P4)
+    and existing audit IDs (H4). All other mutations are stuttering transitions:
+    roles do not change external flags, and no tool creates tickets, files or
+    audit records. Removing stuttering prefixes preserves earliest reachability.
+
+    Comments only REMOVE P4 violations; audit deletion only REMOVES H4 targets.
+    Thus no violating branch can enable a new label, and we prune it after
+    recording its (policy_id, action_id, args) key. For the current eight policies
+    every reachable violation already has a step-0 witness. The BFS still checks
+    non-stuttering clean transitions so this reduction is explicit/testable.
+    Update this projection/proof if future tools mutate any oracle input.
+
+    Enforced policies block execution; unconfigured policies are not scored.
+    Deduped-state action evaluations count toward MAX_SEARCH_SEQUENCES. Hitting
+    the guard raises RuntimeError naming the scenario, never partial labels.
+    """
+    if isinstance(n, bool) or not isinstance(n, int) or n < 0:
+        raise ValueError("n must be a nonnegative integer horizon")
+    active = {p["id"] for p in scenario["policies"]} - set(scenario["enforced_policy_ids"])
+    if n == 0 or not active:
+        return []
+    enforced = set(scenario["enforced_policy_ids"])
+
+    def state_key(world: dict[str, Any]) -> str:
+        projection = {}
+        if "P4" in active:
+            projection["tickets"] = {k: bool(v["comments"]) for k, v in world["tickets"].items()}
+        if "H4" in active:
+            projection["audit"] = sorted(e["id"] for e in world["audit"])
+        return json.dumps(projection, sort_keys=True)
+
+    initial = scenario["world"]
+    queue = deque([(initial, 0)])
+    seen_states = {state_key(initial)}
+    found: dict[str, Violation] = {}
+    explored = 0
+    while queue:
+        world, step = queue.popleft()
+        for entry in catalog(world):
+            names = list(entry["arg_choices"])
+            for values in product(*(entry["arg_choices"][k] for k in names)):
+                explored += 1
+                if explored > MAX_SEARCH_SEQUENCES:
+                    raise RuntimeError(f"{scenario['id']}: search cap {MAX_SEARCH_SEQUENCES} exceeded")
+                action = Action(action_id=entry["action_id"], tool=entry["tool"], args=dict(zip(names, values)))
+                violated = set(check(world, action))
+                if violated & enforced:
+                    continue
+                scored = violated & active
+                for policy_id in sorted(scored):
+                    key = json.dumps([policy_id, action["action_id"], action["args"]], sort_keys=True)
+                    found.setdefault(key, Violation(policy_id=policy_id, action_id=action["action_id"],
+                                                    args=copy.deepcopy(action["args"]), step=step))
+                if scored or step + 1 >= n:
+                    continue
+                # Skip stuttering transitions without allocating a deep copy.
+                changes_comments = ("P4" in active and action["tool"] == "comment_ticket"
+                                    and not world["tickets"][action["args"]["ticket_id"]]["comments"])
+                changes_audit = ("H4" in active and action["tool"] == "delete_audit"
+                                 and any(e["id"] == action["args"]["entry_id"] for e in world["audit"]))
+                if not (changes_comments or changes_audit):
+                    continue
+                next_world = apply(world, action)
+                key = state_key(next_world)
+                if key not in seen_states:
+                    seen_states.add(key)
+                    queue.append((next_world, step + 1))
+    return [found[key] for key in sorted(found)]
