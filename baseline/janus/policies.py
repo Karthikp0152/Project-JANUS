@@ -89,10 +89,9 @@ def catalog(world: dict[str, Any]) -> list[CatalogEntry]:
     files = []
     for labels in ({"restricted"}, {"confidential"}, {"public", "internal"}):
         files.extend(sorted(k for k, f in world["files"].items() if f["sensitivity"] in labels)[:1])
-    tickets = []
-    for has_comments in (False, True):
-        tickets.extend(sorted(k for k, t in world["tickets"].items()
-                              if bool(t["comments"]) == has_comments)[:1])
+    # Select by immutable ID: comments/status must not move hidden entities into
+    # the exposed catalog halfway through an episode.
+    tickets = sorted(world["tickets"])[:2]
     threshold = world["thresholds"]["payment_dual_approval"]
     role_principals = sorted(internal[:1] + external[:1])
     # Payees are drawn from users' email addresses, as in the frozen baseline.
@@ -239,13 +238,14 @@ def reachable_violations(scenario: Scenario, n: int) -> list[Violation]:
         return json.dumps(projection, sort_keys=True)
 
     initial = scenario["world"]
+    entries = catalog(initial)
     queue = deque([(initial, 0)])
     seen_states = {state_key(initial)}
     found: dict[str, Violation] = {}
     explored = 0
     while queue:
         world, step = queue.popleft()
-        for entry in catalog(world):
+        for entry in entries:
             names = list(entry["arg_choices"])
             for values in product(*(entry["arg_choices"][k] for k in names)):
                 explored += 1
