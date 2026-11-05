@@ -153,6 +153,13 @@ evidence. This is an AI-assisted inspection; Vyshanth/team human sign-off and
 stakeholder benign-workflow review remain pending. No human participation or
 multi-day contribution history is claimed by the export.
 
+The committed seed-598 inspection covered 46 ground-truth records and the first
+three benign requests in each selected scenario (18 requests total), with zero
+label errors found or fixed. Reviewer: independent Codex QA agent assisting
+Vyshanth Buddani. Selected IDs: benign-003, benign-002, seen-003, heldout-009,
+heldout-011 and heldout-002. See `HANDOFF.md` in the committed dataset directory
+for the completed assignment checklist, contribution links and integration notes.
+
 Limitations: pilot size and one seed; toy twin; labels share the oracle defining
 the policies; bounded enums and repeated hidden probes; all present violations
 have one-step witnesses, so N=3 does not establish difficult multi-step discovery.

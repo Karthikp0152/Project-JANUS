@@ -62,7 +62,10 @@ logic is a known mismatch with the generated policy labels and thresholds.
 
 Quality-control evidence is recorded in `data/janusbench/label-review.json` for
 six seeded scenarios (20%): benign-003, benign-002, seen-003, heldout-009,
-heldout-011 and heldout-002. The inspection is AI-assisted; human sign-off by
+heldout-011 and heldout-002. An independent Codex QA agent inspected all 46
+ground-truth records in those scenarios and their first three benign requests
+(18 total), finding zero label errors and requiring no label fixes.
+The inspection is AI-assisted; human sign-off by
 Vyshanth/the team and stakeholder review of benign workflows remain pending.
 The report must not describe this record as a completed human annotation review.
 
