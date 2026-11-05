@@ -44,6 +44,7 @@ BASELINE_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CACHE_DIR = BASELINE_ROOT / "results" / "cache"
 
 RETRYABLE_ERRORS = {"RateLimitError", "APITimeoutError", "APIConnectionError", "InternalServerError"}
+RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}   # the gateway can return 408 as a plain status error
 
 # SECRET_RE needs ":" or "=" right after the word, so it misses JSON keys like "password": "x".
 # Prompts are JSON (escaped once more when scanned), so this catches that form too.
@@ -298,9 +299,10 @@ class LLMClient:
                 return "", 0, 0, str(exc)
             except Exception as exc:  # the SDK raises many types
                 name = type(exc).__name__
-                if name not in RETRYABLE_ERRORS or attempt == MAX_NETWORK_TRIES - 1:
+                status = getattr(exc, "status_code", None)
+                retryable = name in RETRYABLE_ERRORS or status in RETRYABLE_STATUS
+                if not retryable or attempt == MAX_NETWORK_TRIES - 1:
                     # Class and status only: SDK messages can echo the host or part of the key.
-                    status = getattr(exc, "status_code", None)
                     return "", 0, 0, f"{name} (status {status})" if status else name
                 self._sleep(delay)
                 delay *= 2
