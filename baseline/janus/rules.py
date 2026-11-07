@@ -13,8 +13,9 @@ Rule shape (janus.types.DefenseRule):
   - applies_to:  a tool name from ALL_TOOLS; only actions of that tool are checked
   - conditions:  ANDed list of {field, op, value}; the rule fires when all hold
   - effect:      "deny"    -> action denied when all conditions hold
-                 "require" -> when all conditions hold, action denied unless
-                              action.args[require_field] is truthy
+                 "require" -> when all conditions hold, action denied unless the
+                              resolved value of require_field is truthy
+  - require_field: for "require" only; must be an argument of applies_to
   - ops:         ALLOWED_OPS. is_true / is_false ignore `value`.
 
 FIELDS resolvers have the signature (action, world) -> value. Every field is read
@@ -35,7 +36,7 @@ Entity fields:
   to.external              send_email
                            Same rule as policies._external (the oracle): a known user uses
                            their own flag; an unknown address is external unless its domain
-                           is an internal user's domain.
+                           is an internal user's domain (domains inferred from world["users"]).
   attachment.sensitivity   send_email
                            world["files"][attachment]["sensitivity"]; None if no attachment
   folder.label             grant_access
@@ -47,20 +48,20 @@ Entity fields:
 
 verification_ticket note: resolves to None when the arg is null OR names an id that
 is not in world["tickets"]; otherwise it returns the id. So an H3 rule uses
-`verification_ticket is_false` and also blocks bogus ticket ids.
+`verification_ticket is_false`, or a "require" rule on verification_ticket, and both
+block bogus ticket ids.
 
-Not in FIELDS (dropped, see COORDINATION 12.5): link.public, vendor.verified,
-folder, tool.
-
-Fail-closed: an unknown field or a malformed rule makes enforce return "deny";
-it does not raise.
+Fail-closed: enforce denies when an installed rule that applies to the action's tool
+is malformed or errors, when the action is not a valid catalog action (unknown tool,
+wrong arguments, non-finite or boolean amount, negative payment), or on any error.
+Rules for other tools are skipped. enforce does not raise.
 """
 from __future__ import annotations
 
 from typing import Any, Callable, Literal
 
 from janus import policies
-from janus.types import ALL_TOOLS, ALLOWED_OPS, ALLOWED_RULE_KINDS, Action, DefenseRule
+from janus.types import ALL_TOOLS, ALLOWED_OPS, ALLOWED_RULE_KINDS, POLICY_FAMILIES, Action, DefenseRule
 
 FieldResolver = Callable[[Action, dict[str, Any]], Any]
 
@@ -206,31 +207,47 @@ RULE_KEYS = (
 )
 
 
-def validate_schema(rule: DefenseRule) -> tuple[bool, str]:
-    """V1: well-formed, allowed kind and ops. Returns (ok, reason)."""
+def _check_rule(rule: Any) -> tuple[bool, str]:
     if not isinstance(rule, dict):
         return False, "rule is not a mapping"
-    missing = [k for k in RULE_KEYS if k not in rule]
-    if missing:
-        return False, f"missing keys: {', '.join(missing)}"
+    if any(k not in rule for k in RULE_KEYS):
+        return False, "missing keys"
+    if not isinstance(rule["id"], str) or not rule["id"]:
+        return False, "id must be a non-empty string"
+    if not isinstance(rule["rationale"], str):
+        return False, "rationale must be a string"
     if rule["kind"] not in ALLOWED_RULE_KINDS:
-        return False, f"unknown kind: {rule['kind']!r}"
-    if rule["applies_to"] not in ALL_TOOLS:
-        return False, f"unknown tool: {rule['applies_to']!r}"
+        return False, "unknown kind"
+    if not isinstance(rule["applies_to"], str) or rule["applies_to"] not in ALL_TOOLS:
+        return False, "unknown tool"
+    if not isinstance(rule["addresses_policy"], str) or rule["addresses_policy"] not in POLICY_FAMILIES:
+        return False, "unknown policy id"
     if rule["effect"] not in ("deny", "require"):
-        return False, f"unknown effect: {rule['effect']!r}"
-    if (rule["effect"] == "require") != (rule["require_field"] is not None):
-        return False, "require_field must be set iff effect is 'require'"
+        return False, "unknown effect"
+    if rule["effect"] == "require":
+        field = rule["require_field"]
+        if not isinstance(field, str) or field not in policies.ACTION_ARGS[rule["applies_to"]] or field not in FIELDS:
+            return False, "require_field is not an argument of the tool"
+    elif rule["require_field"] is not None:
+        return False, "require_field must be null unless effect is 'require'"
     if not isinstance(rule["conditions"], list):
         return False, "conditions must be a list"
     for cond in rule["conditions"]:
         if not isinstance(cond, dict) or "field" not in cond or "op" not in cond or "value" not in cond:
             return False, "condition needs field, op and value"
-        if cond["field"] not in FIELDS:
-            return False, f"unknown field: {cond['field']!r}"
-        if cond["op"] not in ALLOWED_OPS:
-            return False, f"unknown op: {cond['op']!r}"
+        if not isinstance(cond["field"], str) or cond["field"] not in FIELDS:
+            return False, "unknown field"
+        if not isinstance(cond["op"], str) or cond["op"] not in ALLOWED_OPS:
+            return False, "unknown op"
     return True, "ok"
+
+
+def validate_schema(rule: DefenseRule) -> tuple[bool, str]:
+    """V1: well-formed rule. Returns (ok, reason). Never raises."""
+    try:
+        return _check_rule(rule)
+    except Exception:
+        return False, "rule could not be checked"
 
 
 def _condition_holds(cond: dict[str, Any], action: Action, world: dict[str, Any]) -> bool:
@@ -256,7 +273,13 @@ def _condition_holds(cond: dict[str, Any], action: Action, world: dict[str, Any]
         return bool(value)
     if op == "is_false":
         return not bool(value)
-    raise ValueError(f"unknown op {op!r}")  # unreachable after validate_schema
+    raise ValueError("unknown op")  # unreachable after validate_schema
+
+
+def _valid_action(action: Action) -> bool:
+    """The same catalog checks as the policy oracle, plus no negative payments."""
+    policies._args(action)  # unknown tool, wrong arg names, non-finite or boolean amount
+    return not (action["tool"] == "create_payment" and action["args"]["amount"] < 0)
 
 
 def enforce(rules: list[DefenseRule], action: Action, world: dict[str, Any]) -> Literal["allow", "deny"]:
@@ -264,22 +287,25 @@ def enforce(rules: list[DefenseRule], action: Action, world: dict[str, Any]) -> 
 
     Only rules whose applies_to equals action["tool"] are considered.
     deny:    action denied when all conditions hold.
-    require: when all conditions hold, action denied unless action.args[require_field] is truthy.
-    Fail closed: a malformed applicable rule, an unknown field, or any error returns "deny".
+    require: when all conditions hold, action denied unless the resolved value of
+             require_field is truthy (so a bogus verification ticket resolves to None).
+    Fail closed: an invalid action, a malformed rule that applies to this tool, or any
+    error returns "deny". Malformed rules for other tools are skipped.
     """
     try:
+        if not _valid_action(action):
+            return "deny"
         for rule in rules:
+            if not isinstance(rule, dict) or rule.get("applies_to") != action["tool"]:
+                continue
             ok, _reason = validate_schema(rule)
             if not ok:
-                return "deny"  # any malformed installed rule fails closed
-            if rule["applies_to"] != action["tool"]:
-                continue
-            fires = all(_condition_holds(c, action, world) for c in rule["conditions"])
-            if not fires:
+                return "deny"
+            if not all(_condition_holds(c, action, world) for c in rule["conditions"]):
                 continue
             if rule["effect"] == "deny":
                 return "deny"
-            if not action["args"].get(rule["require_field"]):
+            if not FIELDS[rule["require_field"]](action, world):
                 return "deny"
         return "allow"
     except Exception:
