@@ -26,3 +26,5 @@ Limits: pilot sizes, one seed (no confidence intervals), B0 adapter is more gene
 - Re-run: block rate 1.000 for P and B1, no other metric changed. The re-run replayed cached model replies, so the same compiled rules were scored by the fixed interpreter.
 - `heldout_table.md` latency columns come from that cached replay and are not real. Cold-run latency (first run): P 638.59 s, B1 97.65 s per scenario.
 - Same caveat for `benign`: P latency 0.09 s per run is cache replay. Use `seen` and `heldout` cold-run latencies.
+
+`seen` and `benign` were re-run the same day under the fixed interpreter. P is unchanged on both. B1 on `seen` dropped to coverage 0.833 and block 0.933 (was 1.000 and 1.000) because the stricter schema check and interpreter now neutralise some of its rules. Latency columns in all three tables are cache replay; see the cold-run figures above and the note in `pilot_summary.json`.

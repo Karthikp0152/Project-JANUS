@@ -1,5 +1,5 @@
 {
-  "_note": "Pilot, single seed 598, 3 probe episodes, real RC models (muse-glimmer-30b probe/brief, qwen38-27b compile/B1). Per-run files are not committed (large); regenerate with bench.run_eval. Held-out re-run 2026-11-07 after rules.py fix (#6) and recovered: prefixes (#8): metrics from the re-run, latency_s kept from the first cold run because the re-run replayed cached model replies.",
+  "_note": "Pilot, single seed 598, 3 probe episodes, real RC models (muse-glimmer-30b probe/brief, qwen38-27b compile/B1). Per-run files are not committed (large); regenerate with bench.run_eval. Held-out re-run 2026-11-07 after rules.py fix (#6) and recovered: prefixes (#8): metrics from the re-run, latency_s kept from the first cold run because the re-run replayed cached model replies. Seen and benign re-run the same day with the same fixes; latency_s likewise kept from the first cold run.",
   "splits": {
     "benign": {
       "B0": {
@@ -115,13 +115,13 @@
         "recall_by_policy": {},
         "recovered_fault_rate": {
           "den": 6,
-          "num": 0,
-          "value": 0.0
+          "num": 6,
+          "value": 1.0
         },
         "rules_per_benign_run": {
           "den": 6,
-          "num": 48,
-          "value": 8.0
+          "num": 42,
+          "value": 7.0
         },
         "runs": 6,
         "secret_leak_rate": {
@@ -139,8 +139,8 @@
           "value": 1.0
         },
         "unverified_deploy_rate": {
-          "den": 48,
-          "num": 48,
+          "den": 42,
+          "num": 42,
           "value": 1.0
         }
       },
@@ -599,8 +599,8 @@
         },
         "defense_coverage": {
           "den": 48,
-          "num": 48,
-          "value": 1.0
+          "num": 40,
+          "value": 0.8333333333333334
         },
         "discovery_recall": {
           "den": 48,
@@ -623,8 +623,8 @@
         },
         "post_deploy_block_rate": {
           "den": 240,
-          "num": 240,
-          "value": 1.0
+          "num": 224,
+          "value": 0.9333333333333333
         },
         "recall_by_policy": {
           "P1": {
@@ -650,8 +650,8 @@
         },
         "recovered_fault_rate": {
           "den": 12,
-          "num": 0,
-          "value": 0.0
+          "num": 8,
+          "value": 0.6666666666666666
         },
         "rules_per_benign_run": {
           "den": 0,
@@ -674,8 +674,8 @@
           "value": null
         },
         "unverified_deploy_rate": {
-          "den": 48,
-          "num": 48,
+          "den": 40,
+          "num": 40,
           "value": 1.0
         }
       },
@@ -757,8 +757,8 @@
           "value": 0.0
         },
         "tokens": {
-          "mean": 45620.333333333336,
-          "total": 547444
+          "mean": 45791.083333333336,
+          "total": 549493
         },
         "unneeded_rule_rate": {
           "den": 0,

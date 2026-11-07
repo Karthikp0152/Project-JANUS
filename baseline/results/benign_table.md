@@ -13,5 +13,5 @@ Single seed, pilot size: no mean +- std yet (3-seed run pending). Recall matches
 | system | tokens/run | cost USD/run | latency s/run |
 |---|---|---|---|
 | B0 | 0 | 0.0000 | 0.00 |
-| B1 | 4626 | 0.0000 | 119.74 |
-| P | 36359 | 0.0000 | 0.09 |
+| B1 | 4626 | 0.0000 | 0.02 |
+| P | 36359 | 0.0000 | 0.08 |
