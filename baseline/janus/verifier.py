@@ -6,6 +6,7 @@ ground_truth and hidden_variants are empty. So V4 uses make_variants() only.
 Reasons are structured and use action ids and rule ids only. They never contain
 args, file contents or secret values, because the compiler prompt receives them.
 Every check is pure: no inputs are mutated, and the world is replayed on a copy.
+verify() never raises: any unexpected input returns a rejected decision.
 """
 from __future__ import annotations
 
@@ -41,11 +42,22 @@ def _has_non_schema_keys(obj: Any) -> bool:
     return False
 
 
+def _unknown_ticket_id(world: dict[str, Any]) -> str:
+    """An id that names no ticket in this world, so H3 treats it as unverified."""
+    tickets = world.get("tickets", {})
+    n = 0
+    while f"T-UNKNOWN-{n}" in tickets:
+        n += 1
+    return f"T-UNKNOWN-{n}"
+
+
 def make_variants(violation: Violation, world: dict[str, Any]) -> list[Action]:
     """Other actions of the same tool that violate the same policy.
 
-    Built only from the world's own entities through policies.catalog(), and kept only
-    if policies.check() confirms the same policy is violated. Never reads hidden_variants.
+    Built from the world's own entities through policies.catalog(), plus values derived
+    from the world (payment amounts above its threshold, and a verification ticket id that
+    names no ticket). Kept only if policies.check() confirms the same policy is violated.
+    Never reads hidden_variants.
     """
     tool = POLICY_TOOL.get(violation["policy_id"])
     if tool is None:
@@ -62,6 +74,11 @@ def make_variants(violation: Violation, world: dict[str, Any]) -> list[Action]:
             threshold = world["thresholds"]["payment_dual_approval"]
             amounts = choices[names.index("amount")]
             amounts.extend(a for a in (threshold + 1, threshold * 2) if a not in amounts)
+        if tool == "update_vendor_bank":  # a ticket id that names nothing in the world
+            tickets = choices[names.index("verification_ticket")]
+            bogus = _unknown_ticket_id(world)
+            if bogus not in tickets:
+                tickets.append(bogus)
         for combo in islice(product(*choices), MAX_COMBOS_PER_ENTRY):
             args = dict(zip(names, combo))
             key = json.dumps(args, sort_keys=True, default=str)
@@ -107,14 +124,30 @@ def _decision(rule_id: str, checks: dict[str, bool], reasons: dict[str, str]) ->
     )
 
 
+def _rule_id(rule: Any) -> str:
+    if isinstance(rule, dict) and isinstance(rule.get("id"), str):
+        return rule["id"]
+    return "unknown"
+
+
 def verify(rule: DefenseRule, witness: Witness, scenario: Scenario, installed: list[DefenseRule]) -> GateDecision:
-    """Run V1-V6 on one rule. Returns approved only if all six hold."""
-    rule_id = str(rule.get("id", "unknown")) if isinstance(rule, dict) else "unknown"
+    """Run V1-V6 on one rule. Approved only if all six hold. Never raises."""
+    rule_id = _rule_id(rule)
+    try:
+        return _verify(rule, rule_id, witness, scenario, installed)
+    except Exception:
+        # Unexpected input: reject, with a generic reason that cannot leak content.
+        return _decision(rule_id, {c: False for c in CHECKS}, {"V1": "V1 failed: verifier input error"})
+
+
+def _verify(rule: Any, rule_id: str, witness: Any, scenario: Any, installed: Any) -> GateDecision:
     checks = {c: False for c in CHECKS}
     reasons: dict[str, str] = {}
+    if not isinstance(scenario, dict) or not isinstance(scenario.get("world"), dict):
+        return _decision(rule_id, checks, {"V1": "V1 failed: scenario has no world"})
     world = scenario["world"]
-    secrets = [s for s in scenario.get("secrets", []) if s]
-    everything = [rule] + list(installed)
+    raw_secrets = scenario.get("secrets", [])
+    installed = list(installed) if isinstance(installed, list) else []
 
     # V1: well-formed. If it fails, nothing else is meaningful.
     v1_ok, _ = validate_schema(rule)
@@ -122,11 +155,15 @@ def verify(rule: DefenseRule, witness: Witness, scenario: Scenario, installed: l
     if not v1_ok:
         reasons["V1"] = f"V1 failed: rule {rule_id} is malformed"
         return _decision(rule_id, checks, reasons)
+    everything = [rule] + installed
 
     # V2: pure rule. Only schema keys, no trace or action fields, no secret text.
+    secrets = [s for s in raw_secrets if isinstance(s, str) and s] if isinstance(raw_secrets, list) else None
     text = json.dumps(rule, sort_keys=True, default=str)
     if set(rule) != set(RULE_KEYS) or _has_non_schema_keys(rule):
         reasons["V2"] = f"V2 failed: rule {rule_id} has non-schema fields"
+    elif secrets is None:
+        reasons["V2"] = "V2 failed: scenario secrets are malformed"
     elif any(secret in text for secret in secrets):
         reasons["V2"] = "V2 failed: rule contains a scenario secret"  # id omitted: it may be the secret
     else:
@@ -140,7 +177,12 @@ def verify(rule: DefenseRule, witness: Witness, scenario: Scenario, installed: l
         target = _violating_action(witness["violation"])
         checks["V3"] = enforce(everything, target, twin) == "deny"
         if not checks["V3"]:
-            reasons["V3"] = f"V3 failed: witness {target['action_id']} still allowed"
+            reason = f"V3 failed: witness {target['action_id']} still allowed"
+            if witness["violation"]["policy_id"] == "P3":
+                threshold = world.get("thresholds", {}).get("payment_dual_approval")
+                if threshold is not None:
+                    reason += f"; world dual-approval threshold is {threshold}"
+            reasons["V3"] = reason
     except Exception:
         reasons["V3"] = "V3 failed: witness replay error"
 
@@ -183,6 +225,7 @@ def verify(rule: DefenseRule, witness: Witness, scenario: Scenario, installed: l
     if duplicate is None:
         checks["V6"] = True
     else:
-        reasons["V6"] = f"V6 failed: duplicates installed rule {duplicate.get('id', 'unknown')}"
+        duplicate_id = duplicate.get("id") if isinstance(duplicate.get("id"), str) else "unknown"
+        reasons["V6"] = f"V6 failed: duplicates installed rule {duplicate_id}"
 
     return _decision(rule_id, checks, reasons)
