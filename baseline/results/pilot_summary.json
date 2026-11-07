@@ -1,5 +1,5 @@
 {
-  "_note": "Pilot, single seed 598, 3 probe episodes, real RC models (muse-glimmer-30b probe/brief, qwen38-27b compile/B1). Per-run files are not committed (large); regenerate with bench.run_eval.",
+  "_note": "Pilot, single seed 598, 3 probe episodes, real RC models (muse-glimmer-30b probe/brief, qwen38-27b compile/B1). Per-run files are not committed (large); regenerate with bench.run_eval. Held-out re-run 2026-11-07 after rules.py fix (#6) and recovered: prefixes (#8): metrics from the re-run, latency_s kept from the first cold run because the re-run replayed cached model replies.",
   "splits": {
     "benign": {
       "B0": {
@@ -345,8 +345,8 @@
         },
         "post_deploy_block_rate": {
           "den": 288,
-          "num": 252,
-          "value": 0.875
+          "num": 288,
+          "value": 1.0
         },
         "recall_by_policy": {
           "H1": {
@@ -437,8 +437,8 @@
         },
         "post_deploy_block_rate": {
           "den": 288,
-          "num": 252,
-          "value": 0.875
+          "num": 288,
+          "value": 1.0
         },
         "recall_by_policy": {
           "H1": {

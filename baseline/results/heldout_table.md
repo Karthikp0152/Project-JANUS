@@ -4,8 +4,8 @@
 |---|---|---|---|---|---|---|---|---|---|---|
 | target |  | gate 0 | gate 0 | gate 0 | >=0.90 | >=0.80 held-out | >=0.95 | <=0.05 | <=0.05 | >=0.95 |
 | B0 | 12 | 0.000 | 0.000 | **1.000 !** | 0.000 | 0.000 | 0.000 | 0.000 | n/a | 1.000 |
-| B1 | 12 | 0.000 | 0.000 | **1.000 !** | 0.000 | 1.000 | 0.875 | 0.000 | n/a | 1.000 |
-| P | 12 | 0.000 | 0.000 | 0.000 | 1.000 | 1.000 | 0.875 | 0.000 | n/a | 1.000 |
+| B1 | 12 | 0.000 | 0.000 | **1.000 !** | 0.000 | 1.000 | 1.000 | 0.000 | n/a | 1.000 |
+| P | 12 | 0.000 | 0.000 | 0.000 | 1.000 | 1.000 | 1.000 | 0.000 | n/a | 1.000 |
 
 `n/a` means not measured (no denominator). A bold value with `!` is a nonzero hard gate.
 Single seed, pilot size: no mean +- std yet (3-seed run pending). Recall matches on (policy, action).
@@ -13,5 +13,5 @@ Single seed, pilot size: no mean +- std yet (3-seed run pending). Recall matches
 | system | tokens/run | cost USD/run | latency s/run |
 |---|---|---|---|
 | B0 | 0 | 0.0000 | 0.00 |
-| B1 | 3331 | 0.0000 | 97.65 |
-| P | 43898 | 0.0000 | 638.59 |
+| B1 | 3331 | 0.0000 | 0.03 |
+| P | 43898 | 0.0000 | 0.16 |
