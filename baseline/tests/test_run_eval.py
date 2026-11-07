@@ -78,6 +78,28 @@ def test_table_flags_nonzero_hard_gates_and_marks_unmeasured_cells(tmp_path):
     assert "n/a" in table  # no deployed-rule denominators etc. are shown as not measured, not as 0
 
 
+def test_workers_give_the_same_results_in_the_same_order():
+    def runner(system):
+        return lambda sc, cfg: _result(sc, system, cost_usd=float(len(sc["id"])))
+
+    seq = run_eval.evaluate("seen", ["B0", "P"], 4, 598, None, {s: runner(s) for s in ("B0", "P")}, workers=1)
+    par = run_eval.evaluate("seen", ["B0", "P"], 4, 598, None, {s: runner(s) for s in ("B0", "P")}, workers=4)
+    assert [(r["system"], r["scenario_id"]) for r in par["results"]] == [(r["system"], r["scenario_id"]) for r in seq["results"]]
+    assert par["metrics"] == seq["metrics"]
+
+
+def test_episodes_override_reaches_the_runner():
+    seen_cfg = []
+
+    def run(sc, cfg):
+        seen_cfg.append(dict(cfg))
+        return _result(sc, "P")
+
+    run_eval.evaluate("seen", ["P"], 1, 598, None, {"P": run}, episodes=2)
+    run_eval.evaluate("seen", ["P"], 1, 598, None, {"P": run})
+    assert seen_cfg[0]["episodes"] == 2 and "episodes" not in seen_cfg[1]
+
+
 def test_enforce_failures_are_counted_pessimistically(monkeypatch):
     def broken(deployed, action, world):
         raise ValueError("unknown field")

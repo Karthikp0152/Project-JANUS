@@ -15,7 +15,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
 
@@ -110,31 +112,56 @@ def evaluate(
     out_dir: Path | None = None,
     runners: dict[str, Runner] | None = None,
     scenarios: list[Scenario] | None = None,
+    workers: int = 1,
+    episodes: int | None = None,
 ) -> dict[str, Any]:
-    """Run the sweep, write results, and return {"scenarios", "results", "scans", "post_deploy", "metrics"}."""
+    """Run the sweep, write results, and return {"scenarios", "results", "scans", "post_deploy", "metrics"}.
+
+    workers > 1 runs (system, scenario) pairs in parallel threads; results keep the sequential order.
+    Latency is then wall time under load, which is longer than a lone run. episodes overrides the probe
+    episode count (cfg["episodes"]); both are recorded in the output files."""
     from janus.rules import enforce  # imported here so tests can monkeypatch janus.rules
 
     runners = runners or _default_runners()
     scenarios = scenarios if scenarios is not None else world_gen.generate(split, n, seed)
     cfg = PipelineConfig(horizon_n=DEFAULT_HORIZON_N, seed=seed)
+    if episodes is not None:
+        cfg["episodes"] = episodes
+
+    jobs = [(system, sc) for system in systems for sc in scenarios]
+    done = 0
+
+    def one(job: tuple[str, Scenario]) -> tuple[RunResult, dict[str, Any], dict[str, list[str]]]:
+        nonlocal done
+        system, sc = job
+        t0 = time.perf_counter()
+        try:
+            res = runners[system](sc, cfg)
+        except Exception as exc:  # one bad run must not stop the sweep
+            res = _failed(sc, system, cfg, exc, time.perf_counter() - t0)
+        try:
+            scan = dict(scanner.scan(res["artifacts"], sc["secrets"], res["exports"]))
+        except Exception as exc:  # an unscannable run must not pass the hard gates
+            scan = {"leaks": 1, "escapes": 1, "details": ["scan failed"]}
+            res["errors"].append(f"scan failed: {type(exc).__name__}: {exc}"[:300])
+        verdicts = _verdicts(res, sc, enforce)
+        done += 1
+        print(f"[{done}/{len(jobs)}] {system} {sc['id']} done in {time.perf_counter() - t0:.0f}s", file=sys.stderr, flush=True)
+        return res, scan, verdicts
+
+    if workers > 1:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            outcomes = list(pool.map(one, jobs))
+    else:
+        outcomes = [one(job) for job in jobs]
 
     results: list[RunResult] = []
     scans: dict[tuple[str, str], dict[str, Any]] = {}
     post_deploy: dict[str, Any] = {}
-    for system in systems:
-        for sc in scenarios:
-            t0 = time.perf_counter()
-            try:
-                res = runners[system](sc, cfg)
-            except Exception as exc:  # one bad run must not stop the sweep
-                res = _failed(sc, system, cfg, exc, time.perf_counter() - t0)
-            results.append(res)
-            try:
-                scans[(sc["id"], system)] = dict(scanner.scan(res["artifacts"], sc["secrets"], res["exports"]))
-            except Exception as exc:  # an unscannable run must not pass the hard gates
-                scans[(sc["id"], system)] = {"leaks": 1, "escapes": 1, "details": ["scan failed"]}
-                res["errors"].append(f"scan failed: {type(exc).__name__}: {exc}"[:300])
-            post_deploy.setdefault(sc["id"], {})[system] = _verdicts(res, sc, enforce)
+    for (system, sc), (res, scan, verdicts) in zip(jobs, outcomes):
+        results.append(res)
+        scans[(sc["id"], system)] = scan
+        post_deploy.setdefault(sc["id"], {})[system] = verdicts
     computed = metrics.compute(results, scenarios, post_deploy, scans)
     out = {"scenarios": scenarios, "results": results, "scans": scans, "post_deploy": post_deploy, "metrics": computed}
     if out_dir is not None:
@@ -195,12 +222,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--system", default="all", choices=[*SYSTEMS, "all"])
     parser.add_argument("--n", type=int, default=12)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    parser.add_argument("--workers", type=int, default=1, help="parallel (system, scenario) runs; default 1")
+    parser.add_argument("--episodes", type=int, default=None, help="probe episodes per run (default: pipeline default 5)")
     parser.add_argument("--out", type=Path, default=None, help="output directory (default: results/)")
     args = parser.parse_args(argv)
 
     systems = list(SYSTEMS) if args.system == "all" else [args.system]
     out_dir = args.out or default_out()
-    out = evaluate(args.split, systems, args.n, args.seed, out_dir)
+    out = evaluate(args.split, systems, args.n, args.seed, out_dir, workers=args.workers, episodes=args.episodes)
     print(render_table(args.split, systems, out["metrics"], args.n, args.seed))
     print(f"wrote {out_dir}/{args.split}_*.json and {out_dir}/{args.split}_table.md")
     return 0
