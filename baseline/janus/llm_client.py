@@ -183,6 +183,8 @@ def _cache_key(role: str, model: str, messages: list[dict[str, str]], schema: di
 class LLMClient:
     """Exposes ``chat_json`` and ``prompt_log``, as agreed in COORDINATION 11.2."""
 
+    _require_canaries = True
+
     def __init__(
         self,
         *,
@@ -200,22 +202,33 @@ class LLMClient:
         self.prompt_log: list[str] = []
         self.usage: dict[str, float] = {"tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0}
 
+    def bind(self, scenario_id: str, canaries: list[str]) -> "BoundLLM":
+        """Return a client that fills in ``scenario_id`` and ``canaries`` on every call."""
+        return BoundLLM(self, scenario_id, canaries)
+
     def chat_json(
         self,
         role: str,
         messages: list[dict[str, str]],
         schema: dict[str, Any],
         *,
-        scenario_id: str,
-        canaries: list[str],
+        scenario_id: str | None = None,
+        canaries: list[str] | None = None,
     ) -> LLMResult:
         """Return validated JSON in ``data``; on failure ``data`` is None and ``error`` is set.
 
+        Pass ``canaries``, or call this through ``bind()``. A real client refuses to send a prompt
+        without them, so the canary scan cannot be skipped by accident.
         Raises PromptLeak before any call, and on a cache hit too. Cache hits report the tokens
         and cost recorded by the original call, so a replayed run gives the same numbers.
         """
         if role not in ROLES:
             raise ValueError(f"unknown LLM role: {role}")
+        if canaries is None:
+            if self._require_canaries:
+                raise ValueError("canaries are required: pass them or use llm.bind(scenario_id, canaries)")
+            canaries = []
+        scenario_id = scenario_id or "unbound"
         self._scan(messages, canaries, scenario_id, role)
 
         model = self._model_for(role)
@@ -372,6 +385,39 @@ class LLMClient:
             return
 
 
+class BoundLLM:
+    """One client tied to one scenario. Shares the client's ``prompt_log`` and ``usage``."""
+
+    def __init__(self, client: LLMClient, scenario_id: str, canaries: list[str]) -> None:
+        self._client = client
+        self._scenario_id = scenario_id
+        self._canaries = list(canaries)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._client, name)
+
+    def bind(self, scenario_id: str, canaries: list[str]) -> "BoundLLM":
+        return BoundLLM(self._client, scenario_id, canaries)
+
+    def chat_json(
+        self,
+        role: str,
+        messages: list[dict[str, str]],
+        schema: dict[str, Any],
+        *,
+        scenario_id: str | None = None,
+        canaries: list[str] | None = None,
+    ) -> LLMResult:
+        # Extra canaries add to the bound ones; they can never replace them.
+        return self._client.chat_json(
+            role,
+            messages,
+            schema,
+            scenario_id=scenario_id or self._scenario_id,
+            canaries=[*self._canaries, *(canaries or [])],
+        )
+
+
 # Canned rules for FakeLLM's compile role. Tests only; real fallbacks are compiler.TEMPLATE_RULES.
 _FAKE_RULES: dict[str, dict[str, Any]] = {
     "P1": {
@@ -454,8 +500,11 @@ class FakeLLM(LLMClient):
 
     With no ``responses`` it answers every role with valid JSON:
     probe walks the catalog in the prompt, compile returns a rule for the violated policy,
-    brief returns fixed text and b1 returns an empty rule list.
+    brief returns fixed text and b1 returns an empty rule list. Unlike the real client, it can be
+    called without canaries, so module tests stay short; use bind() to test the scan.
     """
+
+    _require_canaries = False
 
     def __init__(self, responses: dict[str, Any] | None = None) -> None:
         super().__init__(transport=self._fake_transport, use_cache=False, sleep=lambda _: None)
