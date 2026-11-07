@@ -39,6 +39,9 @@ def _act(tool, action_id="a", **args):
     {**EXAMPLE_RULES["payment_control"], "applies_to": "close_ticket"},      # dual_approved is not an arg of close_ticket
     {**EXAMPLE_RULES["payment_control"], "require_field": ["dual_approved"]},  # unhashable
     {**EXAMPLE_RULES["firewall_rule"], "require_field": "dual_approved"},     # deny rule with a require_field
+    {**EXAMPLE_RULES["payment_control"], "conditions": [{"field": "amount", "op": ">", "value": "2000"}]},
+    {**EXAMPLE_RULES["payment_control"], "conditions": [{"field": "amount", "op": ">", "value": True}]},
+    {**EXAMPLE_RULES["payment_control"], "conditions": [{"field": "amount", "op": "in", "value": 5}]},
 ])
 def test_validate_schema_never_raises_and_rejects(bad):
     ok, reason = validate_schema(bad)
@@ -58,11 +61,17 @@ def test_verify_rejects_missing_world_instead_of_raising(seen):
     assert decision["rule_id"] == "ex-firewall-p1"
 
 
-def test_verify_rejects_non_str_secrets_instead_of_raising(seen):
-    scenario = dict(seen, secrets=[None, 123, "CANARY-real-1"])
-    decision = verifier.verify(EXAMPLE_RULES["firewall_rule"], {"violation": {}, "prefix": []}, scenario, [])
-    assert decision["status"] == "rejected"  # the witness is unusable, so V3 fails, but nothing raises
+def test_verify_ignores_non_str_secrets_and_still_catches_a_real_one(seen):
+    witness = next(v for v in policies.reachable_violations(seen, 3) if v["policy_id"] == "P1")
+    rule = copy.deepcopy(EXAMPLE_RULES["firewall_rule"])
+    # None and 123 are skipped by the secrets filter; the string id is a real secret in the rule text.
+    scenario = dict(seen, secrets=[None, 123, rule["id"]])
+    decision = verifier.verify(rule, {"violation": witness, "prefix": []}, scenario, [])
     assert decision["checks"]["V1"] is True
+    assert decision["checks"]["V2"] is False
+    assert decision["status"] == "rejected"
+    assert "secret" in decision["reason"]
+    assert rule["id"] not in decision["reason"]  # the reason omits the id when a secret is involved
 
 
 def test_verify_returns_rejected_for_unusable_rule_and_witness(seen):
@@ -199,3 +208,25 @@ def test_p3_threshold_is_stated_in_v3_reason(seen):
     threshold = seen["world"]["thresholds"]["payment_dual_approval"]
     assert decision["checks"]["V3"] is False
     assert f"world dual-approval threshold is {threshold}" in decision["reason"]
+
+
+# ------------------------------------------------- unknown ids: no over-blocking (oracle agrees)
+
+
+@pytest.mark.parametrize("tool,args,rule_key,policy", [
+    ("grant_access", {"folder": "no-such-folder", "principal": "ghost"}, "firewall_rule", "P1"),
+    ("grant_access", {"folder": "no-such-folder", "principal": "ghost@elsewhere.example"}, "firewall_rule", "P1"),
+    ("send_email", {"to": "x@elsewhere.example", "attachment": "no-such-file"}, "dlp_signature", "P2"),
+    ("close_ticket", {"ticket_id": "T-NOT-IN-WORLD"}, "workflow_rule", "P4"),
+    ("share_link", {"file": "no-such-file", "public": True}, "sharing_rule", "H1"),
+])
+def test_unknown_ids_are_allowed_like_the_oracle(seen, tool, args, rule_key, policy):
+    action = _act(tool, **args)
+    assert policy not in policies.check(seen["world"], action)
+    assert enforce([EXAMPLE_RULES[rule_key]], action, seen["world"]) == "allow"
+
+
+def test_ordering_op_on_unresolved_value_does_not_deny(seen):
+    rule = {**EXAMPLE_RULES["workflow_rule"], "applies_to": "close_ticket",
+            "conditions": [{"field": "ticket.comment_count", "op": ">", "value": 0}]}
+    assert enforce([rule], _act("close_ticket", ticket_id="T-NOT-IN-WORLD"), seen["world"]) == "allow"
