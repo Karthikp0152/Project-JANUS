@@ -204,15 +204,87 @@ EXAMPLE_RULES: dict[str, DefenseRule] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Skeleton stubs (real signatures). Implemented on Thu morning (commits 2).
-# ---------------------------------------------------------------------------
+_REQUIRED_RULE_KEYS = (
+    "id", "kind", "applies_to", "conditions", "effect",
+    "require_field", "addresses_policy", "rationale",
+)
+
+
 def validate_schema(rule: DefenseRule) -> tuple[bool, str]:
-    """V1: well-formed, allowed kind and ops. STUB: always fails closed."""
-    return False, "validate_schema not implemented yet"
+    """V1: well-formed, allowed kind and ops. Returns (ok, reason)."""
+    if not isinstance(rule, dict):
+        return False, "rule is not a mapping"
+    missing = [k for k in _REQUIRED_RULE_KEYS if k not in rule]
+    if missing:
+        return False, f"missing keys: {', '.join(missing)}"
+    if rule["kind"] not in ALLOWED_RULE_KINDS:
+        return False, f"unknown kind: {rule['kind']!r}"
+    if rule["applies_to"] not in ALL_TOOLS:
+        return False, f"unknown tool: {rule['applies_to']!r}"
+    if rule["effect"] not in ("deny", "require"):
+        return False, f"unknown effect: {rule['effect']!r}"
+    if (rule["effect"] == "require") != (rule["require_field"] is not None):
+        return False, "require_field must be set iff effect is 'require'"
+    if not isinstance(rule["conditions"], list):
+        return False, "conditions must be a list"
+    for cond in rule["conditions"]:
+        if not isinstance(cond, dict) or "field" not in cond or "op" not in cond or "value" not in cond:
+            return False, "condition needs field, op and value"
+        if cond["field"] not in FIELDS:
+            return False, f"unknown field: {cond['field']!r}"
+        if cond["op"] not in ALLOWED_OPS:
+            return False, f"unknown op: {cond['op']!r}"
+    return True, "ok"
+
+
+def _condition_holds(cond: dict[str, Any], action: Action, world: dict[str, Any]) -> bool:
+    value = FIELDS[cond["field"]](action, world)
+    op, expected = cond["op"], cond["value"]
+    if op == "==":
+        return value == expected
+    if op == "!=":
+        return value != expected
+    if op == ">":
+        return value > expected
+    if op == ">=":
+        return value >= expected
+    if op == "<":
+        return value < expected
+    if op == "<=":
+        return value <= expected
+    if op == "in":
+        return value in expected
+    if op == "not_in":
+        return value not in expected
+    if op == "is_true":
+        return bool(value)
+    if op == "is_false":
+        return not bool(value)
+    raise ValueError(f"unknown op {op!r}")  # unreachable after validate_schema
 
 
 def enforce(rules: list[DefenseRule], action: Action, world: dict[str, Any]) -> Literal["allow", "deny"]:
     """The one shared interpreter. Pure; never executes or mutates the world.
-    STUB: always denies (fail closed) until the Thu implementation lands."""
-    return "deny"
+
+    Only rules whose applies_to equals action["tool"] are considered.
+    deny:    action denied when all conditions hold.
+    require: when all conditions hold, action denied unless action.args[require_field] is truthy.
+    Fail closed: a malformed applicable rule, an unknown field, or any error returns "deny".
+    """
+    try:
+        for rule in rules:
+            ok, _reason = validate_schema(rule)
+            if not ok:
+                return "deny"  # any malformed installed rule fails closed
+            if rule["applies_to"] != action["tool"]:
+                continue
+            fires = all(_condition_holds(c, action, world) for c in rule["conditions"])
+            if not fires:
+                continue
+            if rule["effect"] == "deny":
+                return "deny"
+            if not action["args"].get(rule["require_field"]):
+                return "deny"
+        return "allow"
+    except Exception:
+        return "deny"
