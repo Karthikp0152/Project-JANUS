@@ -33,8 +33,9 @@ Entity fields:
   principal.external       grant_access, change_role
                            world["users"][principal]["external"]
   to.external              send_email
-                           world["users"] looked up by email. An address that is not
-                           a known user and does not end in COMPANY_DOMAIN is external.
+                           Same rule as policies._external (the oracle): a known user uses
+                           their own flag; an unknown address is external unless its domain
+                           is an internal user's domain.
   attachment.sensitivity   send_email
                            world["files"][attachment]["sensitivity"]; None if no attachment
   folder.label             grant_access
@@ -58,11 +59,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Literal
 
+from janus import policies
 from janus.types import ALL_TOOLS, ALLOWED_OPS, ALLOWED_RULE_KINDS, Action, DefenseRule
-
-# Synthetic company domain. Addresses that are not known users and do not end in this
-# domain count as external. TODO: confirm with Vyshanth that the world uses this domain.
-COMPANY_DOMAIN = "company.example"
 
 FieldResolver = Callable[[Action, dict[str, Any]], Any]
 
@@ -79,11 +77,8 @@ def _principal_external(action: Action, world: dict[str, Any]) -> bool:
 
 
 def _to_external(action: Action, world: dict[str, Any]) -> bool:
-    address = action["args"]["to"]
-    for user in world["users"].values():
-        if user.get("email") == address:
-            return bool(user["external"])
-    return not address.endswith("@" + COMPANY_DOMAIN)
+    # Same rule as the policy oracle (policies.check), so the two cannot disagree.
+    return policies._external(world, action["args"]["to"])
 
 
 def _attachment_sensitivity(action: Action, world: dict[str, Any]) -> str | None:
@@ -134,6 +129,7 @@ FIELDS: dict[str, FieldResolver] = {
 # One example DefenseRule per policy (P1-P4 seen, H1-H4 held-out). Used by the
 # compiler prompt/schema (Mokshitha) and by tests/test_rules.py.
 # P1 uses folder.label == "restricted" (COORDINATION 15.4).
+# P3's value (2000) is an example only; compiled rules take the world's threshold.
 EXAMPLE_RULES: dict[str, DefenseRule] = {
     "firewall_rule": {
         "id": "ex-firewall-p1", "kind": "firewall_rule", "applies_to": "grant_access",
@@ -159,7 +155,7 @@ EXAMPLE_RULES: dict[str, DefenseRule] = {
             {"field": "amount", "op": ">", "value": 2000},
         ],
         "effect": "require", "require_field": "dual_approved", "addresses_policy": "P3",
-        "rationale": "Payments above the world threshold (2000 in seen worlds) need dual approval.",
+        "rationale": "Payments above the world's dual-approval threshold need dual approval.",
     },
     "workflow_rule": {
         "id": "ex-workflow-p4", "kind": "workflow_rule", "applies_to": "close_ticket",
