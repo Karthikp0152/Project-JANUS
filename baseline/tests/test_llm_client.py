@@ -400,3 +400,38 @@ def test_fake_llm_default_probe_walks_the_prompt_catalog():
     schema = {"type": "object"}
     assert call(fake, messages=messages, schema=schema)["data"] == {"action_id": "a", "args": {"ticket_id": "T-1"}}
     assert call(fake, messages=messages, schema=schema)["data"] == {"action_id": "b", "args": {"entry_id": "e-1"}}
+
+
+def test_bind_fills_in_canaries_and_shares_log_and_usage(tmp_path):
+    client, transport, _ = make(tmp_path, '{"ok": true}')
+    bound = client.bind("s-9", ["CANARY-1"])
+    assert bound.chat_json("probe", MESSAGES, SCHEMA)["data"] == {"ok": True}
+    assert bound.prompt_log is client.prompt_log
+    assert bound.usage is client.usage
+    assert bound.usage["tokens_in"] == 100
+    with pytest.raises(PromptLeak, match="s-9/probe"):
+        bound.chat_json("probe", [{"role": "user", "content": "CANARY-1"}], SCHEMA)
+    assert len(transport.calls) == 1
+
+
+def test_bind_cannot_be_overridden_to_skip_the_scan(tmp_path):
+    client, _, _ = make(tmp_path, '{"ok": true}')
+    bound = client.bind("s-9", ["CANARY-1"])
+    with pytest.raises(PromptLeak):
+        bound.chat_json("probe", [{"role": "user", "content": "CANARY-1"}], SCHEMA, canaries=[])
+
+
+def test_real_client_needs_canaries_but_fake_does_not(tmp_path):
+    client, transport, _ = make(tmp_path, '{"ok": true}')
+    with pytest.raises(ValueError, match="canaries are required"):
+        client.chat_json("probe", MESSAGES, SCHEMA)
+    assert transport.calls == []
+    assert FakeLLM({"probe": {"ok": True}}).chat_json("probe", MESSAGES, SCHEMA)["data"] == {"ok": True}
+    assert client.chat_json("probe", MESSAGES, SCHEMA, canaries=[])["data"] == {"ok": True}
+
+
+def test_bound_fake_exposes_calls():
+    fake = FakeLLM({"probe": {"ok": True}})
+    bound = fake.bind("s", [])
+    bound.chat_json("probe", MESSAGES, SCHEMA)
+    assert bound.calls == ["probe"]
