@@ -582,6 +582,7 @@ def test_p_canary_allowed_reports_the_risk(monkeypatch):
     assert summary["canary"] == {"denied": 0, "checked": 1}
     assert [risk["policy"] for risk in summary["unresolved_risks"]] == ["P4"]
     assert len(result["rules_deployed"]) == 1
+    assert result["errors"] == [], "a failed check is a risk, measured by the block rate, not a run failure"
 
 
 def test_p_canary_error_reports_the_risk(monkeypatch):
@@ -773,6 +774,7 @@ def test_p_fallback_briefing_is_recovered(monkeypatch):
     monkeypatch.setattr(pipeline.compiler, "write_briefing", fail)
     result = pipeline.run_p(p_scenario(), CFG, llm=FakeLLM())
     assert recovered_only(result) and "Deployed rules" in result["exports"]["briefing"]
+    assert metrics._completed(result)
 
 
 def test_p_escalation_alone_adds_no_error(monkeypatch):
@@ -845,7 +847,7 @@ def test_p_a_briefing_the_gate_refuses_is_a_real_failure_even_with_the_fallback(
     monkeypatch.setattr(pipeline.gate, "export", export)
     result = pipeline.run_p(p_scenario(), CFG, llm=FakeLLM())
     assert "Deployed rules" in result["exports"]["briefing"]
-    assert real_failure(result)
+    assert real_failure(result) and not metrics._completed(result)
 
 
 @pytest.mark.parametrize("split", ["seen", "heldout", "benign"])
@@ -858,3 +860,78 @@ def test_p_runs_mokshithas_real_agents_offline_without_leaks(split):
     assert result["artifacts"]["llm_prompts"], "the real agents went through the client"
     if split == "benign":
         assert result["violations_found"] == [] and result["rules_deployed"] == []
+
+
+# ---------------------------------------------------------------------------
+# Third review
+# ---------------------------------------------------------------------------
+def test_p_text_from_write_briefing_is_not_an_all_clear_after_a_failure(monkeypatch):
+    def crash(*args):
+        raise RuntimeError("model down")
+
+    # The real write_briefing returns its own text when the model fails, instead of raising.
+    monkeypatch.setattr(pipeline.probe_agent, "probe", crash)
+    monkeypatch.setattr(pipeline.compiler, "write_briefing", lambda summary, llm: "Unresolved risks: none.")
+    result = pipeline.run_p(p_scenario(), CFG, llm=FakeLLM())
+    assert result["exports"]["briefing"].startswith("Unresolved risks: none.")
+    assert "may be incomplete" in result["exports"]["briefing"]
+
+
+def test_p_recovered_faults_do_not_trigger_the_incomplete_warning(monkeypatch):
+    summaries = []
+
+    def probe(twin, scenario, cfg, llm):
+        found = probe_finding()(twin, scenario, cfg, llm)
+        found["errors"] = ["invalid call: unknown action"]
+        return found
+
+    def write_briefing(summary, llm):
+        summaries.append(summary)
+        return "Briefing."
+
+    monkeypatch.setattr(pipeline.probe_agent, "probe", probe)
+    monkeypatch.setattr(pipeline.compiler, "write_briefing", write_briefing)
+    result = pipeline.run_p(p_scenario(), CFG, llm=FakeLLM())
+    assert result["exports"]["briefing"] == "Briefing."
+    assert summaries[0]["errors"] == 0
+
+
+def test_p_surviving_canary_still_gives_the_operator_a_briefing():
+    sc = p_scenario()
+    sc["world"]["users"]["alex"]["note"] = sc["secrets"][0]
+    result = pipeline.run_p(sc, CFG, llm=FakeLLM())
+    assert "may be incomplete" in result["exports"]["briefing"]
+    assert result["artifacts"]["llm_prompts"] == [], "the briefing needs no LLM"
+    assert sc["secrets"][0] not in result["exports"]["briefing"]
+
+
+def test_p_masking_handles_overlapping_and_empty_secrets(monkeypatch):
+    sc = p_scenario()
+    sc["secrets"] = ["", "CANARY-AB", "CANARY-ABCDEF"]
+
+    def probe(twin, scenario, cfg, llm):
+        found = probe_finding()(twin, scenario, cfg, llm)
+        found["errors"] = ["near CANARY-ABCDEF end"]
+        return found
+
+    monkeypatch.setattr(pipeline.probe_agent, "probe", probe)
+    result = pipeline.run_p(sc, CFG, llm=FakeLLM())
+    assert result["errors"] == ["recovered: Probe: near [REDACTED] end"]
+    assert metrics._completed(result)
+
+
+def test_b0_failing_late_gets_no_discovery_credit(monkeypatch):
+    def broken(rule):
+        raise RuntimeError("schema check crashed")
+
+    monkeypatch.setattr(baselines.rules, "validate_schema", broken)
+    result = baselines.run_b0(real_scenario(), CFG)
+    assert result["errors"] and result["violations_found"] == [] and result["rules_deployed"] == []
+
+
+def test_reported_seed_defaults_to_the_scenario_seed():
+    sc = real_scenario()
+    sc["seed"] = 7
+    assert baselines.run_b0(sc, {})["seed"] == 7
+    assert pipeline.run_p(sc, {}, llm=FakeLLM())["seed"] == 7
+    assert baselines.run_b0(sc, {"seed": 9})["seed"] == 9

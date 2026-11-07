@@ -41,7 +41,6 @@ from aswa.world import EnterpriseWorld
 from janus import rules
 from janus.types import (
     DEFAULT_HORIZON_N,
-    DEFAULT_SEED,
     DefenseRule,
     GateDecision,
     PipelineConfig,
@@ -163,7 +162,7 @@ def run_b0(scenario: Scenario, cfg: PipelineConfig) -> RunResult:
     horizon = cfg.get("horizon_n", DEFAULT_HORIZON_N)
     started = time.perf_counter()
     result = RunResult(
-        scenario_id=scenario["id"], system="B0", seed=cfg.get("seed", DEFAULT_SEED), horizon_n=horizon,
+        scenario_id=scenario["id"], system="B0", seed=cfg.get("seed", scenario["seed"]), horizon_n=horizon,
         violations_found=[], rules_deployed=[], gate_log=[], exports={"rules": [], "briefing": None},
         artifacts={"twin_dump": "", "llm_prompts": [], "logs": [], "probe_values": []},
         tokens=TokenUse(tokens_in=0, tokens_out=0), cost_usd=0.0, latency_s=0.0, errors=[],
@@ -189,6 +188,7 @@ def run_b0(scenario: Scenario, cfg: PipelineConfig) -> RunResult:
             f"B0: {len(result['violations_found'])} violations, {len(deployed)} rules deployed",
         ]
     except Exception as exc:  # a world B0 cannot run counts as a B0 failure (12.3)
+        result["violations_found"] = []
         result["rules_deployed"] = []
         result["gate_log"] = []
         result["exports"] = {"rules": [], "briefing": None}
