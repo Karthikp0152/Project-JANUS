@@ -43,6 +43,8 @@ REQUEST_TIMEOUT_S = 120
 BASELINE_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CACHE_DIR = BASELINE_ROOT / "results" / "cache"
 
+RECOVERED = "recovered: "   # bench.metrics counts errors with this prefix as handled faults
+
 RETRYABLE_ERRORS = {"RateLimitError", "APITimeoutError", "APIConnectionError", "InternalServerError"}
 RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}   # the gateway can return 408 as a plain status error
 

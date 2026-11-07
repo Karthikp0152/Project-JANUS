@@ -643,3 +643,25 @@ def test_b1_builds_the_real_client_when_llm_is_none(scenario, monkeypatch):
     monkeypatch.setattr(b1, "LLMClient", build)
     b1.run_b1(scenario, {"use_cache": False})
     assert built == {"use_cache": False}
+
+
+# ---- recovered: prefix (bench.metrics counts these as handled faults) -----------------------
+def test_probe_faults_it_handled_are_marked_recovered(scenario):
+    result = probe(scenario["world"], scenario, ONE_STEP, FakeLLM({"probe": {"action_id": "rm_rf"}}))
+    assert result["errors"] == ["recovered: invalid call: unknown action_id"]
+    fallback = probe(scenario["world"], scenario, ONE_STEP, FakeLLM({"probe": "bad"}))
+    assert len(fallback["errors"]) == 2
+    assert all(error.startswith("recovered: ") for error in fallback["errors"])
+    assert "probe LLM failed" in fallback["errors"][0]
+    assert "Q-learner" in fallback["errors"][1]
+
+
+def test_b1_gate_rejection_is_recovered_but_real_failures_are_not(scenario, monkeypatch):
+    bad = b1.run_b1(scenario, {}, llm=FakeLLM({"b1": "bad"}))
+    assert bad["errors"][0].startswith("b1 LLM failed")
+    monkeypatch.setattr(sys.modules["janus.rules"], "validate_schema", lambda rule: (False, "no"))
+    rejected = b1.run_b1(scenario, {}, llm=FakeLLM({"b1": {"rules": [B1_RULE]}}))
+    assert rejected["errors"][0].startswith("recovered: b1-seen-001-0 rejected")
+    scenario["world"]["folders"]["CANARY-tele1"] = {"label": "public"}
+    leaked = b1.run_b1(scenario, {}, llm=FakeLLM())
+    assert leaked["errors"][0].startswith("PromptLeak")
