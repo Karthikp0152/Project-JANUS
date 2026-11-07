@@ -182,7 +182,7 @@ def run_b0(scenario: Scenario, cfg: PipelineConfig) -> RunResult:
         # The twin B0 actually built, so the scanner checks the same thing as for P. Never copy `run`
         # itself: it also holds the raw telemetry and the attack trace.
         shadow = RealityMirroringEngine().mirror(_to_aswa_world(scenario["world"]), scenario["telemetry"])["shadow"]
-        result["artifacts"]["twin_dump"] = json.dumps(asdict(shadow), sort_keys=True, default=str)
+        result["artifacts"]["twin_dump"] = json.dumps(asdict(shadow), sort_keys=True, default=str, ensure_ascii=False)
         result["artifacts"]["probe_values"] = _probe_values(run["attack"]["best_trace"])
         result["artifacts"]["logs"] = [
             f"B0: {run['duplicate']['redactions']} redactions",

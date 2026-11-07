@@ -423,7 +423,10 @@ def test_p_verifier_gets_no_answer_key_or_hidden_variants(monkeypatch):
     assert sc["hidden_variants"] and sc["ground_truth"], "the original keeps them for the harness"
     assert seen["hidden_variants"] == [] and seen["ground_truth"] == []
     assert seen["benign_actions"] == sc["benign_actions"]
-    assert seen["secrets"] == sc["secrets"] and seen["world"] == sc["world"]
+    assert seen["secrets"] == sc["secrets"]
+    assert all(meta["contents"] == "[SANITIZED]" for meta in seen["world"]["files"].values())
+    assert seen["world"]["folders"] == sc["world"]["folders"], "structure and labels stay intact"
+    assert not any(secret in json.dumps(seen["telemetry"]) for secret in sc["secrets"])
 
 
 def test_p_gate_refusal_reports_the_risk_instead_of_an_all_clear(monkeypatch):
@@ -468,7 +471,7 @@ def test_p_prompt_leak_while_briefing_keeps_completed_work(monkeypatch):
     monkeypatch.setattr(pipeline.compiler, "write_briefing", leak)
     result = pipeline.run_p(p_scenario(), CFG, llm=FakeLLM())
     assert len(result["rules_deployed"]) == 1 and len(result["exports"]["rules"]) == 1
-    assert result["exports"]["briefing"] is None
+    assert "Deployed rules" in result["exports"]["briefing"], "the fallback needs no LLM"
     assert result["violations_found"] == [P_VIOLATION]
     assert "T-200" in result["artifacts"]["probe_values"]
     assert any("PromptLeak" in e for e in result["errors"])
@@ -546,3 +549,118 @@ def test_b0_twin_dump_covers_the_world_so_the_leak_gate_treats_it_like_p():
     assert result["errors"] == []
     assert scanner.scan(result["artifacts"], sc["secrets"], result["exports"])["leaks"] > 0
     assert "[SANITIZED]" in result["artifacts"]["twin_dump"]
+
+
+def canary_run(monkeypatch, evaluate):
+    summaries = []
+
+    def write_briefing(summary, llm):
+        summaries.append(summary)
+        return "Briefing."
+
+    monkeypatch.setattr(pipeline.probe_agent, "probe", probe_finding(P_VIOLATION))
+    monkeypatch.setattr(pipeline.verifier, "verify", scripted_verify("approved"))
+    monkeypatch.setattr(pipeline.gate, "evaluate_only", evaluate)
+    monkeypatch.setattr(pipeline.compiler, "write_briefing", write_briefing)
+    return pipeline.run_p(p_scenario(), CFG, llm=FakeLLM()), summaries[0]
+
+
+def test_p_canary_denied_leaves_no_open_risk(monkeypatch):
+    result, summary = canary_run(monkeypatch, lambda *a: "deny")
+    assert summary["canary"] == {"denied": 1, "checked": 1}
+    assert summary["unresolved_risks"] == []
+    assert len(result["rules_deployed"]) == 1
+
+
+def test_p_canary_allowed_reports_the_risk(monkeypatch):
+    result, summary = canary_run(monkeypatch, lambda *a: "allow")
+    assert summary["canary"] == {"denied": 0, "checked": 1}
+    assert [risk["policy"] for risk in summary["unresolved_risks"]] == ["P4"]
+    assert len(result["rules_deployed"]) == 1
+
+
+def test_p_canary_error_reports_the_risk(monkeypatch):
+    def broken(*args):
+        raise RuntimeError("endpoint down")
+
+    result, summary = canary_run(monkeypatch, broken)
+    assert [risk["policy"] for risk in summary["unresolved_risks"]] == ["P4"]
+    assert any("Canary" in e for e in result["errors"])
+
+
+def test_p_refused_llm_briefing_falls_back_and_keeps_the_risk(monkeypatch):
+    original = pipeline.gate.export
+
+    def export(decisions, rules, briefing, canaries=None):
+        if briefing == "Written by the model.":
+            raise gate.GateViolation("canary in briefing")
+        return original(decisions, rules, briefing, canaries)
+
+    monkeypatch.setattr(pipeline.probe_agent, "probe", probe_finding(P_VIOLATION))
+    monkeypatch.setattr(pipeline.verifier, "verify", scripted_verify("rejected", "rejected", "rejected"))
+    monkeypatch.setattr(pipeline.compiler, "write_briefing", lambda summary, llm: "Written by the model.")
+    monkeypatch.setattr(pipeline.gate, "export", export)
+    result = pipeline.run_p(p_scenario(), CFG, llm=FakeLLM())
+    assert "Unresolved risks: P4" in result["exports"]["briefing"]
+
+
+def test_p_prompt_leak_while_compiling_leaves_an_honest_record(monkeypatch):
+    second = {"policy_id": "P1", "action_id": "grant_access", "args": {"folder": "payroll", "principal": "alex"}, "step": 0}
+    original = pipeline.compiler.compile_rule
+
+    def compile_rule(violation, *rest):
+        if violation["policy_id"] == "P1":
+            raise PromptLeak("blocked")
+        return original(violation, *rest)
+
+    monkeypatch.setattr(pipeline.probe_agent, "probe", probe_finding(P_VIOLATION, second))
+    monkeypatch.setattr(pipeline.compiler, "compile_rule", compile_rule)
+    monkeypatch.setattr(pipeline.compiler, "write_briefing", lambda *a: pytest.fail("no LLM call after a leak"))
+    monkeypatch.setattr(pipeline.verifier, "verify", scripted_verify("approved"))
+    result = pipeline.run_p(p_scenario(), CFG, llm=FakeLLM())
+    assert result["rules_deployed"] == []
+    assert not any(d["status"] == "approved" for d in result["gate_log"])
+    assert "P4" in result["exports"]["briefing"] and "P1" in result["exports"]["briefing"]
+    assert any("PromptLeak" in e for e in result["errors"])
+
+
+def test_p_compile_error_keeps_the_verifier_feedback_for_the_next_round(monkeypatch):
+    feedback = []
+    original = pipeline.compiler.compile_rule
+
+    def compile_rule(violation, policy, twin_view, fb, llm):
+        feedback.append(fb)
+        if len(feedback) == 2:
+            raise compiler.CompileError("bad output")
+        return original(violation, policy, twin_view, fb, llm)
+
+    monkeypatch.setattr(pipeline.probe_agent, "probe", probe_finding(P_VIOLATION))
+    monkeypatch.setattr(pipeline.compiler, "compile_rule", compile_rule)
+    monkeypatch.setattr(pipeline.verifier, "verify", scripted_verify("rejected", "approved"))
+    result = pipeline.run_p(p_scenario(), CFG, llm=FakeLLM())
+    assert feedback[2] == "V5 failed: blocks benign action"
+    assert result["gate_log"][0]["rounds"] == 3 and result["gate_log"][0]["status"] == "approved"
+
+
+@pytest.mark.parametrize("canary", ["CANARY-\u00e91", 'CANARY-"q', "CANARY-\\b"])
+def test_p_aborts_on_a_surviving_canary_with_special_characters(monkeypatch, canary):
+    sc = p_scenario()
+    sc["secrets"] = [canary]
+    sc["world"]["users"]["alex"]["note"] = canary
+    monkeypatch.setattr(pipeline.probe_agent, "probe", lambda *a: pytest.fail("probe must not run"))
+    result = pipeline.run_p(sc, CFG, llm=FakeLLM())
+    assert any("canary survived" in e for e in result["errors"])
+
+
+def test_scanners_see_a_non_ascii_canary_in_both_twin_dumps():
+    sc = real_scenario()
+    sc["secrets"] = ["CANARY-\u00e91"]
+    sc["world"]["users"]["alex"]["note"] = sc["secrets"][0]
+    for result in (baselines.run_b0(sc, CFG), pipeline.run_p(sc, CFG, llm=FakeLLM())):
+        assert scanner.scan(result["artifacts"], sc["secrets"], result["exports"])["leaks"] > 0
+
+
+def test_b0_rules_all_pass_the_schema_check():
+    result = baselines.run_b0(real_scenario(), CFG)
+    assert len(result["gate_log"]) == 4
+    assert all(d["checks"]["V1"] is True for d in result["gate_log"]), result["gate_log"]

@@ -7,13 +7,16 @@ sanitizing, verifying and exporting are deterministic.
 Safety properties kept here:
 - A planted canary surviving the mirror aborts the run before any LLM client exists (12.4).
 - The probe receives the mirrored scenario with no answer key, hidden variants or benign suite.
-- The verifier never receives the answer key or hidden variants, which belong to the harness.
+- The verifier receives the mirrored scenario too, without the answer key or hidden variants, because its
+  reasons feed back into compiler prompts.
 - The compiler sees the sanitized world and one Violation record, never a witness or trace (11.2).
 - Witnesses never reach logs or exports; logs hold counts and ids only.
 - Rules cross the Gate before deployment. The briefing is written afterwards and crosses separately, so
   it can report canary results, and a failure while briefing cannot undo deployed rules.
 - If the Gate fails for any reason, nothing is deployed and the risks are reported as unresolved.
-- A failure at any point keeps what the run already did, so the scanner still sees its prompts and logs.
+- A rule that fails its canary check counts as an unresolved risk, even though it stays deployed.
+- A failure at any point keeps what the run already did, so the scanner still sees its prompts and logs,
+  and the operator still gets a briefing built from ids and policy references, with no LLM involved.
 
 Violations of policies the scenario does not configure, or already enforces, are ignored: `policies.check`
 deliberately ignores enforcement (11.3), and acting on them would deploy unneeded rules on benign worlds.
@@ -22,6 +25,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Iterator
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
@@ -69,6 +73,18 @@ class _Run:
 
     def error(self, state: str, exc: BaseException) -> None:
         self.record(f"{state}: {type(exc).__name__}: {exc}")
+
+
+def _strings(value: Any) -> Iterator[str]:
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            yield from _strings(key)
+            yield from _strings(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _strings(item)
 
 
 def _mirror(scenario: Scenario) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -121,7 +137,7 @@ def _compile_and_verify(
     policy: Policy,
     witness: Witness,
     twin: dict[str, Any],
-    scenario: Scenario,
+    verifier_view: Scenario,
     max_rounds: int,
     llm: Any,
     run: _Run,
@@ -133,12 +149,11 @@ def _compile_and_verify(
     for round_number in range(1, max_rounds + 1):
         try:
             rule = compiler.compile_rule(violation, policy, twin_view, feedback, llm)
-            decision = verifier.verify(rule, witness, _without_answers(scenario), run.approved)
+            decision = verifier.verify(rule, witness, verifier_view, run.approved)
         except PromptLeak:
             raise
         except Exception as exc:
-            run.error("Compile", exc)
-            feedback = f"Previous attempt failed: {type(exc).__name__}"
+            run.error("Compile/Verify", exc)  # keeps `feedback`: the last verifier reason is still the useful one
             continue
         decision["rounds"] = round_number
         if decision["status"] == "approved":
@@ -166,9 +181,14 @@ def _canary(deployed: list[DefenseRule], violations: list[Violation], twin: dict
     denied = 0
     for violation in violations:
         try:
-            denied += gate.evaluate_only(deployed, _to_action(violation), twin) == "deny"
+            verdict = gate.evaluate_only(deployed, _to_action(violation), twin)
         except Exception as exc:
             run.error("Canary", exc)
+            verdict = "unknown"
+        if verdict == "deny":
+            denied += 1
+        elif violation not in run.unresolved:
+            run.unresolved.append(violation)
     run.log("Canary", f"{denied}/{len(violations)} unsafe actions denied")
     return {"denied": denied, "checked": len(violations)}
 
@@ -200,6 +220,14 @@ def _fallback_briefing(summary: dict[str, Any]) -> str:
     return text
 
 
+def _export_briefing(text: str, deployed: list[DefenseRule], scenario: Scenario, run: _Run) -> dict[str, Any] | None:
+    try:
+        return gate.export(run.gate_log, deployed, text, canaries=scenario["secrets"])
+    except Exception as exc:
+        run.error("Brief", exc)
+        return None
+
+
 def _brief(
     summary: dict[str, Any],
     deployed: list[DefenseRule],
@@ -207,19 +235,18 @@ def _brief(
     scenario: Scenario,
     run: _Run,
 ) -> dict[str, Any]:
-    """Write the briefing and send it through the Gate; the rules stay deployed if it is refused."""
+    """Send the written briefing through the Gate, or the fallback if that fails; rules stay deployed either way."""
     try:
-        briefing = compiler.write_briefing(summary, llm)
-    except PromptLeak:
-        raise
-    except Exception as exc:
+        written = compiler.write_briefing(summary, llm)
+    except Exception as exc:  # includes PromptLeak; this is the last LLM call, so nothing is left to abort
         run.error("Brief", exc)
-        briefing = _fallback_briefing(summary)
-    try:
-        return gate.export(run.gate_log, deployed, briefing, canaries=scenario["secrets"])
-    except Exception as exc:
-        run.error("Brief", exc)
-        return {"rules": deployed, "briefing": None}
+        written = None
+    for text in (written, _fallback_briefing(summary)):
+        if text:
+            exported = _export_briefing(text, deployed, scenario, run)
+            if exported is not None:
+                return exported
+    return {"rules": deployed, "briefing": None}
 
 
 def _refuse_export(violations: list[Violation], run: _Run) -> None:
@@ -232,6 +259,22 @@ def _refuse_export(violations: list[Violation], run: _Run) -> None:
     run.approved = []
 
 
+def _close_aborted(scenario: Scenario, out: dict[str, Any], run: _Run) -> None:
+    """After a failure: no approved record for rules that never deployed, and the operator still hears of the risks."""
+    if not out["deployed"]:
+        _refuse_export(out["violations"], run)
+    if out["exports"].get("briefing"):
+        return
+    try:
+        summary = _summary(scenario, out["deployed"], {"denied": 0, "checked": 0}, run)
+        exported = _export_briefing(_fallback_briefing(summary), out["deployed"], scenario, run)
+    except Exception as exc:
+        run.error("Aborted", exc)
+        return
+    if exported is not None:
+        out["exports"] = exported
+
+
 def _no_outputs() -> dict[str, Any]:
     return {"violations": [], "deployed": [], "exports": {"rules": [], "briefing": None}, "probe_values": []}
 
@@ -241,6 +284,7 @@ def _execute(
 ) -> None:
     """Probe through Brief. Fills `out` as each state finishes, so a later failure keeps earlier results."""
     view = _without_answers(scenario, world=twin, telemetry=telemetry, benign_actions=[])
+    verifier_view = _without_answers(scenario, world=twin, telemetry=telemetry)
     try:
         probed = probe_agent.probe(twin, view, cfg, llm)
         found, witnesses = probed["violations"], probed["witnesses"]
@@ -259,7 +303,9 @@ def _execute(
     max_rounds = cfg.get("max_repair_rounds", DEFAULT_REPAIR_ROUNDS)
     for violation in out["violations"]:
         witness = _witness_for(violation, witnesses)
-        _compile_and_verify(violation, policies[violation["policy_id"]], witness, twin, scenario, max_rounds, llm, run)
+        _compile_and_verify(
+            violation, policies[violation["policy_id"]], witness, twin, verifier_view, max_rounds, llm, run
+        )
 
     try:
         exported = gate.export(run.gate_log, run.approved, None, canaries=scenario["secrets"])
@@ -282,13 +328,15 @@ def run_p(scenario: Scenario, cfg: PipelineConfig, llm: Any = None) -> RunResult
     started = time.perf_counter()
     run = _Run(secrets=list(scenario["secrets"]))
     twin, telemetry = _mirror(scenario)
-    twin_dump = json.dumps({"world": twin, "telemetry": telemetry}, sort_keys=True, default=str)
+    twin_dump = json.dumps({"world": twin, "telemetry": telemetry}, sort_keys=True, default=str, ensure_ascii=False)
     run.log("Mirror", f"{len(scenario['telemetry'])} telemetry events sanitized")
 
     out = _no_outputs()
     usage_before: dict[str, float] = dict(llm.usage) if llm is not None else {}
     prompts_before = len(llm.prompt_log) if llm is not None else 0
-    if any(secret and secret in twin_dump for secret in scenario["secrets"]):
+    # Searched as raw strings, because serializing escapes quotes and backslashes in a secret.
+    mirrored = list(_strings([twin, telemetry]))
+    if any(secret and secret in text for secret in scenario["secrets"] for text in mirrored):
         run.errors.append("Mirror: a planted canary survived sanitizing; aborted before any LLM call")
     else:
         try:
@@ -297,6 +345,7 @@ def run_p(scenario: Scenario, cfg: PipelineConfig, llm: Any = None) -> RunResult
             _execute(scenario, twin, telemetry, cfg, llm, run, out)
         except Exception as exc:  # includes PromptLeak; the run stops but keeps what it already did
             run.error("Aborted", exc)
+            _close_aborted(scenario, out, run)
 
     usage = llm.usage if llm is not None else {}
     return RunResult(
