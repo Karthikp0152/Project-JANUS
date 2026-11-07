@@ -1,0 +1,776 @@
+{
+  "_note": "Pilot, single seed 598, 3 probe episodes, real RC models (muse-glimmer-30b probe/brief, qwen38-27b compile/B1). Per-run files are not committed (large); regenerate with bench.run_eval.",
+  "splits": {
+    "benign": {
+      "B0": {
+        "completion_rate": {
+          "den": 6,
+          "num": 6,
+          "value": 1.0
+        },
+        "cost_usd": {
+          "mean": 0.0,
+          "total": 0.0
+        },
+        "defense_coverage": {
+          "den": 0,
+          "num": 0,
+          "value": null
+        },
+        "discovery_recall": {
+          "den": 0,
+          "num": 0,
+          "value": null
+        },
+        "latency_s": {
+          "mean": 0.0016039000000394783,
+          "total": 0.00962340000023687
+        },
+        "over_blocking_rate": {
+          "den": 144,
+          "num": 0,
+          "value": 0.0
+        },
+        "payload_escape_rate": {
+          "den": 6,
+          "num": 0,
+          "value": 0.0
+        },
+        "post_deploy_block_rate": {
+          "den": 0,
+          "num": 0,
+          "value": null
+        },
+        "recall_by_policy": {},
+        "recovered_fault_rate": {
+          "den": 6,
+          "num": 0,
+          "value": 0.0
+        },
+        "rules_per_benign_run": {
+          "den": 6,
+          "num": 24,
+          "value": 4.0
+        },
+        "runs": 6,
+        "secret_leak_rate": {
+          "den": 6,
+          "num": 0,
+          "value": 0.0
+        },
+        "tokens": {
+          "mean": 0,
+          "total": 0
+        },
+        "unneeded_rule_rate": {
+          "den": 6,
+          "num": 6,
+          "value": 1.0
+        },
+        "unverified_deploy_rate": {
+          "den": 24,
+          "num": 24,
+          "value": 1.0
+        }
+      },
+      "B1": {
+        "completion_rate": {
+          "den": 6,
+          "num": 6,
+          "value": 1.0
+        },
+        "cost_usd": {
+          "mean": 0.0,
+          "total": 0.0
+        },
+        "defense_coverage": {
+          "den": 0,
+          "num": 0,
+          "value": null
+        },
+        "discovery_recall": {
+          "den": 0,
+          "num": 0,
+          "value": null
+        },
+        "latency_s": {
+          "mean": 119.74112796666668,
+          "total": 718.4467678000001
+        },
+        "over_blocking_rate": {
+          "den": 144,
+          "num": 0,
+          "value": 0.0
+        },
+        "payload_escape_rate": {
+          "den": 6,
+          "num": 0,
+          "value": 0.0
+        },
+        "post_deploy_block_rate": {
+          "den": 0,
+          "num": 0,
+          "value": null
+        },
+        "recall_by_policy": {},
+        "recovered_fault_rate": {
+          "den": 6,
+          "num": 0,
+          "value": 0.0
+        },
+        "rules_per_benign_run": {
+          "den": 6,
+          "num": 48,
+          "value": 8.0
+        },
+        "runs": 6,
+        "secret_leak_rate": {
+          "den": 6,
+          "num": 0,
+          "value": 0.0
+        },
+        "tokens": {
+          "mean": 4625.5,
+          "total": 27753
+        },
+        "unneeded_rule_rate": {
+          "den": 6,
+          "num": 6,
+          "value": 1.0
+        },
+        "unverified_deploy_rate": {
+          "den": 48,
+          "num": 48,
+          "value": 1.0
+        }
+      },
+      "P": {
+        "completion_rate": {
+          "den": 6,
+          "num": 6,
+          "value": 1.0
+        },
+        "cost_usd": {
+          "mean": 0.0,
+          "total": 0.0
+        },
+        "defense_coverage": {
+          "den": 0,
+          "num": 0,
+          "value": null
+        },
+        "discovery_recall": {
+          "den": 0,
+          "num": 0,
+          "value": null
+        },
+        "latency_s": {
+          "mean": 0.09228910000001633,
+          "total": 0.553734600000098
+        },
+        "over_blocking_rate": {
+          "den": 144,
+          "num": 0,
+          "value": 0.0
+        },
+        "payload_escape_rate": {
+          "den": 6,
+          "num": 0,
+          "value": 0.0
+        },
+        "post_deploy_block_rate": {
+          "den": 0,
+          "num": 0,
+          "value": null
+        },
+        "recall_by_policy": {},
+        "recovered_fault_rate": {
+          "den": 6,
+          "num": 0,
+          "value": 0.0
+        },
+        "rules_per_benign_run": {
+          "den": 6,
+          "num": 0,
+          "value": 0.0
+        },
+        "runs": 6,
+        "secret_leak_rate": {
+          "den": 6,
+          "num": 0,
+          "value": 0.0
+        },
+        "tokens": {
+          "mean": 36358.833333333336,
+          "total": 218153
+        },
+        "unneeded_rule_rate": {
+          "den": 6,
+          "num": 0,
+          "value": 0.0
+        },
+        "unverified_deploy_rate": {
+          "den": 0,
+          "num": 0,
+          "value": 0.0
+        }
+      }
+    },
+    "heldout": {
+      "B0": {
+        "completion_rate": {
+          "den": 12,
+          "num": 12,
+          "value": 1.0
+        },
+        "cost_usd": {
+          "mean": 0.0,
+          "total": 0.0
+        },
+        "defense_coverage": {
+          "den": 48,
+          "num": 0,
+          "value": 0.0
+        },
+        "discovery_recall": {
+          "den": 48,
+          "num": 0,
+          "value": 0.0
+        },
+        "latency_s": {
+          "mean": 0.0016684416665005604,
+          "total": 0.020021299998006725
+        },
+        "over_blocking_rate": {
+          "den": 296,
+          "num": 0,
+          "value": 0.0
+        },
+        "payload_escape_rate": {
+          "den": 12,
+          "num": 0,
+          "value": 0.0
+        },
+        "post_deploy_block_rate": {
+          "den": 288,
+          "num": 0,
+          "value": 0.0
+        },
+        "recall_by_policy": {
+          "H1": {
+            "den": 12,
+            "num": 0,
+            "value": 0.0
+          },
+          "H2": {
+            "den": 12,
+            "num": 0,
+            "value": 0.0
+          },
+          "H3": {
+            "den": 12,
+            "num": 0,
+            "value": 0.0
+          },
+          "H4": {
+            "den": 12,
+            "num": 0,
+            "value": 0.0
+          }
+        },
+        "recovered_fault_rate": {
+          "den": 12,
+          "num": 0,
+          "value": 0.0
+        },
+        "rules_per_benign_run": {
+          "den": 0,
+          "num": 0,
+          "value": null
+        },
+        "runs": 12,
+        "secret_leak_rate": {
+          "den": 12,
+          "num": 0,
+          "value": 0.0
+        },
+        "tokens": {
+          "mean": 0,
+          "total": 0
+        },
+        "unneeded_rule_rate": {
+          "den": 0,
+          "num": 0,
+          "value": null
+        },
+        "unverified_deploy_rate": {
+          "den": 48,
+          "num": 48,
+          "value": 1.0
+        }
+      },
+      "B1": {
+        "completion_rate": {
+          "den": 12,
+          "num": 12,
+          "value": 1.0
+        },
+        "cost_usd": {
+          "mean": 0.0,
+          "total": 0.0
+        },
+        "defense_coverage": {
+          "den": 48,
+          "num": 48,
+          "value": 1.0
+        },
+        "discovery_recall": {
+          "den": 48,
+          "num": 0,
+          "value": 0.0
+        },
+        "latency_s": {
+          "mean": 97.65059472499986,
+          "total": 1171.8071366999984
+        },
+        "over_blocking_rate": {
+          "den": 296,
+          "num": 0,
+          "value": 0.0
+        },
+        "payload_escape_rate": {
+          "den": 12,
+          "num": 0,
+          "value": 0.0
+        },
+        "post_deploy_block_rate": {
+          "den": 288,
+          "num": 252,
+          "value": 0.875
+        },
+        "recall_by_policy": {
+          "H1": {
+            "den": 12,
+            "num": 0,
+            "value": 0.0
+          },
+          "H2": {
+            "den": 12,
+            "num": 0,
+            "value": 0.0
+          },
+          "H3": {
+            "den": 12,
+            "num": 0,
+            "value": 0.0
+          },
+          "H4": {
+            "den": 12,
+            "num": 0,
+            "value": 0.0
+          }
+        },
+        "recovered_fault_rate": {
+          "den": 12,
+          "num": 0,
+          "value": 0.0
+        },
+        "rules_per_benign_run": {
+          "den": 0,
+          "num": 0,
+          "value": null
+        },
+        "runs": 12,
+        "secret_leak_rate": {
+          "den": 12,
+          "num": 0,
+          "value": 0.0
+        },
+        "tokens": {
+          "mean": 3330.5833333333335,
+          "total": 39967
+        },
+        "unneeded_rule_rate": {
+          "den": 0,
+          "num": 0,
+          "value": null
+        },
+        "unverified_deploy_rate": {
+          "den": 48,
+          "num": 48,
+          "value": 1.0
+        }
+      },
+      "P": {
+        "completion_rate": {
+          "den": 12,
+          "num": 12,
+          "value": 1.0
+        },
+        "cost_usd": {
+          "mean": 0.0,
+          "total": 0.0
+        },
+        "defense_coverage": {
+          "den": 48,
+          "num": 48,
+          "value": 1.0
+        },
+        "discovery_recall": {
+          "den": 48,
+          "num": 48,
+          "value": 1.0
+        },
+        "latency_s": {
+          "mean": 638.5925217333335,
+          "total": 7663.110260800001
+        },
+        "over_blocking_rate": {
+          "den": 296,
+          "num": 0,
+          "value": 0.0
+        },
+        "payload_escape_rate": {
+          "den": 12,
+          "num": 0,
+          "value": 0.0
+        },
+        "post_deploy_block_rate": {
+          "den": 288,
+          "num": 252,
+          "value": 0.875
+        },
+        "recall_by_policy": {
+          "H1": {
+            "den": 12,
+            "num": 12,
+            "value": 1.0
+          },
+          "H2": {
+            "den": 12,
+            "num": 12,
+            "value": 1.0
+          },
+          "H3": {
+            "den": 12,
+            "num": 12,
+            "value": 1.0
+          },
+          "H4": {
+            "den": 12,
+            "num": 12,
+            "value": 1.0
+          }
+        },
+        "recovered_fault_rate": {
+          "den": 12,
+          "num": 0,
+          "value": 0.0
+        },
+        "rules_per_benign_run": {
+          "den": 0,
+          "num": 0,
+          "value": null
+        },
+        "runs": 12,
+        "secret_leak_rate": {
+          "den": 12,
+          "num": 0,
+          "value": 0.0
+        },
+        "tokens": {
+          "mean": 43897.916666666664,
+          "total": 526775
+        },
+        "unneeded_rule_rate": {
+          "den": 0,
+          "num": 0,
+          "value": null
+        },
+        "unverified_deploy_rate": {
+          "den": 48,
+          "num": 0,
+          "value": 0.0
+        }
+      }
+    },
+    "seen": {
+      "B0": {
+        "completion_rate": {
+          "den": 12,
+          "num": 12,
+          "value": 1.0
+        },
+        "cost_usd": {
+          "mean": 0.0,
+          "total": 0.0
+        },
+        "defense_coverage": {
+          "den": 48,
+          "num": 48,
+          "value": 1.0
+        },
+        "discovery_recall": {
+          "den": 48,
+          "num": 48,
+          "value": 1.0
+        },
+        "latency_s": {
+          "mean": 0.001653299999892018,
+          "total": 0.019839599998704216
+        },
+        "over_blocking_rate": {
+          "den": 303,
+          "num": 0,
+          "value": 0.0
+        },
+        "payload_escape_rate": {
+          "den": 12,
+          "num": 0,
+          "value": 0.0
+        },
+        "post_deploy_block_rate": {
+          "den": 240,
+          "num": 240,
+          "value": 1.0
+        },
+        "recall_by_policy": {
+          "P1": {
+            "den": 12,
+            "num": 12,
+            "value": 1.0
+          },
+          "P2": {
+            "den": 12,
+            "num": 12,
+            "value": 1.0
+          },
+          "P3": {
+            "den": 12,
+            "num": 12,
+            "value": 1.0
+          },
+          "P4": {
+            "den": 12,
+            "num": 12,
+            "value": 1.0
+          }
+        },
+        "recovered_fault_rate": {
+          "den": 12,
+          "num": 0,
+          "value": 0.0
+        },
+        "rules_per_benign_run": {
+          "den": 0,
+          "num": 0,
+          "value": null
+        },
+        "runs": 12,
+        "secret_leak_rate": {
+          "den": 12,
+          "num": 0,
+          "value": 0.0
+        },
+        "tokens": {
+          "mean": 0,
+          "total": 0
+        },
+        "unneeded_rule_rate": {
+          "den": 0,
+          "num": 0,
+          "value": null
+        },
+        "unverified_deploy_rate": {
+          "den": 48,
+          "num": 48,
+          "value": 1.0
+        }
+      },
+      "B1": {
+        "completion_rate": {
+          "den": 12,
+          "num": 12,
+          "value": 1.0
+        },
+        "cost_usd": {
+          "mean": 0.0,
+          "total": 0.0
+        },
+        "defense_coverage": {
+          "den": 48,
+          "num": 48,
+          "value": 1.0
+        },
+        "discovery_recall": {
+          "den": 48,
+          "num": 0,
+          "value": 0.0
+        },
+        "latency_s": {
+          "mean": 41.3967355083333,
+          "total": 496.7608260999996
+        },
+        "over_blocking_rate": {
+          "den": 303,
+          "num": 31,
+          "value": 0.10231023102310231
+        },
+        "payload_escape_rate": {
+          "den": 12,
+          "num": 0,
+          "value": 0.0
+        },
+        "post_deploy_block_rate": {
+          "den": 240,
+          "num": 240,
+          "value": 1.0
+        },
+        "recall_by_policy": {
+          "P1": {
+            "den": 12,
+            "num": 0,
+            "value": 0.0
+          },
+          "P2": {
+            "den": 12,
+            "num": 0,
+            "value": 0.0
+          },
+          "P3": {
+            "den": 12,
+            "num": 0,
+            "value": 0.0
+          },
+          "P4": {
+            "den": 12,
+            "num": 0,
+            "value": 0.0
+          }
+        },
+        "recovered_fault_rate": {
+          "den": 12,
+          "num": 0,
+          "value": 0.0
+        },
+        "rules_per_benign_run": {
+          "den": 0,
+          "num": 0,
+          "value": null
+        },
+        "runs": 12,
+        "secret_leak_rate": {
+          "den": 12,
+          "num": 0,
+          "value": 0.0
+        },
+        "tokens": {
+          "mean": 2586,
+          "total": 31032
+        },
+        "unneeded_rule_rate": {
+          "den": 0,
+          "num": 0,
+          "value": null
+        },
+        "unverified_deploy_rate": {
+          "den": 48,
+          "num": 48,
+          "value": 1.0
+        }
+      },
+      "P": {
+        "completion_rate": {
+          "den": 12,
+          "num": 12,
+          "value": 1.0
+        },
+        "cost_usd": {
+          "mean": 0.0,
+          "total": 0.0
+        },
+        "defense_coverage": {
+          "den": 48,
+          "num": 48,
+          "value": 1.0
+        },
+        "discovery_recall": {
+          "den": 48,
+          "num": 48,
+          "value": 1.0
+        },
+        "latency_s": {
+          "mean": 630.5543779083334,
+          "total": 7566.652534900001
+        },
+        "over_blocking_rate": {
+          "den": 303,
+          "num": 0,
+          "value": 0.0
+        },
+        "payload_escape_rate": {
+          "den": 12,
+          "num": 0,
+          "value": 0.0
+        },
+        "post_deploy_block_rate": {
+          "den": 240,
+          "num": 240,
+          "value": 1.0
+        },
+        "recall_by_policy": {
+          "P1": {
+            "den": 12,
+            "num": 12,
+            "value": 1.0
+          },
+          "P2": {
+            "den": 12,
+            "num": 12,
+            "value": 1.0
+          },
+          "P3": {
+            "den": 12,
+            "num": 12,
+            "value": 1.0
+          },
+          "P4": {
+            "den": 12,
+            "num": 12,
+            "value": 1.0
+          }
+        },
+        "recovered_fault_rate": {
+          "den": 12,
+          "num": 0,
+          "value": 0.0
+        },
+        "rules_per_benign_run": {
+          "den": 0,
+          "num": 0,
+          "value": null
+        },
+        "runs": 12,
+        "secret_leak_rate": {
+          "den": 12,
+          "num": 0,
+          "value": 0.0
+        },
+        "tokens": {
+          "mean": 45620.333333333336,
+          "total": 547444
+        },
+        "unneeded_rule_rate": {
+          "den": 0,
+          "num": 0,
+          "value": null
+        },
+        "unverified_deploy_rate": {
+          "den": 48,
+          "num": 0,
+          "value": 0.0
+        }
+      }
+    }
+  }
+}
