@@ -6,7 +6,7 @@ import pytest
 from bench import metrics, run_eval
 from janus import b1, baselines, compiler, gate, policies, probe_agent, rules, scanner, verifier, world_gen
 from janus import pipeline
-from janus.llm_client import FakeLLM, PromptLeak
+from janus.llm_client import BoundLLM, FakeLLM, LLMClient, PromptLeak
 from janus.types import (
     DefenseRule,
     GateDecision,
@@ -394,13 +394,18 @@ def test_p_counts_only_this_runs_tokens_and_prompts(monkeypatch):
         return probe_finding()(twin, scenario, cfg, client)
 
     monkeypatch.setattr(pipeline.probe_agent, "probe", probe)
+    monkeypatch.setattr(pipeline.compiler, "write_briefing", lambda summary, client: "Briefing.")
     result = pipeline.run_p(p_scenario(), CFG, llm=llm)
     assert result["tokens"] == {"tokens_in": 7, "tokens_out": 3}
     assert result["artifacts"]["llm_prompts"] == ["this run"]
 
 
 def test_harness_runs_b0_and_p_end_to_end():
-    out = run_eval.evaluate("seen", ["B0", "P"], 1, 598, runners=None)
+    runners = {
+        "B0": baselines.run_b0,
+        "P": lambda scenario, cfg: pipeline.run_p(scenario, cfg, llm=FakeLLM()),  # never the real, paid client
+    }
+    out = run_eval.evaluate("seen", ["B0", "P"], 1, 598, runners=runners)
     assert {r["system"] for r in out["results"]} == {"B0", "P"}
     assert out["metrics"]["overall"]["B0"]["unverified_deploy_rate"]["value"] == 1.0
     assert out["metrics"]["overall"]["B0"]["secret_leak_rate"]["value"] == 0.0
@@ -492,7 +497,7 @@ def test_p_unexpected_export_error_deploys_nothing_and_keeps_artifacts(monkeypat
     monkeypatch.setattr(pipeline.gate, "export", broken)
     result = pipeline.run_p(p_scenario(), CFG, llm=llm)
     assert result["rules_deployed"] == [] and result["exports"]["rules"] == []
-    assert result["artifacts"]["llm_prompts"] == ["sent to the model"]
+    assert "sent to the model" in result["artifacts"]["llm_prompts"]
     assert any("TypeError" in e for e in result["errors"])
 
 
@@ -510,7 +515,7 @@ def test_p_unexpected_error_in_a_later_state_does_not_escape_run_p(monkeypatch):
     monkeypatch.setattr(pipeline.verifier, "verify", scripted_verify("approved"))
     monkeypatch.setattr(pipeline, "_summary", broken)
     result = pipeline.run_p(p_scenario(), CFG, llm=llm)
-    assert result["artifacts"]["llm_prompts"] == ["sent to the model"]
+    assert "sent to the model" in result["artifacts"]["llm_prompts"]
     assert len(result["rules_deployed"]) == 1
     assert any("KeyError" in e for e in result["errors"])
 
@@ -664,3 +669,192 @@ def test_b0_rules_all_pass_the_schema_check():
     result = baselines.run_b0(real_scenario(), CFG)
     assert len(result["gate_log"]) == 4
     assert all(d["checks"]["V1"] is True for d in result["gate_log"]), result["gate_log"]
+
+
+# ---------------------------------------------------------------------------
+# bind() and the "recovered:" contract with bench.metrics
+# ---------------------------------------------------------------------------
+def test_p_gives_every_agent_a_client_bound_to_this_scenario(monkeypatch):
+    clients = {}
+    original_compile = pipeline.compiler.compile_rule
+
+    def probe(twin, scenario, cfg, client):
+        clients["probe"] = client
+        return probe_finding(P_VIOLATION)(twin, scenario, cfg, client)
+
+    def compile_rule(violation, policy, twin_view, feedback, client):
+        clients["compile"] = client
+        return original_compile(violation, policy, twin_view, feedback, client)
+
+    def write_briefing(summary, client):
+        clients["brief"] = client
+        return "Briefing."
+
+    monkeypatch.setattr(pipeline.probe_agent, "probe", probe)
+    monkeypatch.setattr(pipeline.compiler, "compile_rule", compile_rule)
+    monkeypatch.setattr(pipeline.compiler, "write_briefing", write_briefing)
+    monkeypatch.setattr(pipeline.verifier, "verify", scripted_verify("approved"))
+    pipeline.run_p(p_scenario(), CFG, llm=FakeLLM())
+    assert set(clients) == {"probe", "compile", "brief"}
+    assert all(isinstance(client, BoundLLM) for client in clients.values())
+
+
+def test_p_bound_client_blocks_a_canary_in_any_prompt(monkeypatch):
+    sc = p_scenario()
+    schema = {"type": "object"}
+
+    def probe(twin, scenario, cfg, client):
+        client.chat_json("probe", [{"role": "user", "content": sc["secrets"][0]}], schema)
+        pytest.fail("the prompt should have been blocked")
+
+    monkeypatch.setattr(pipeline.probe_agent, "probe", probe)
+    result = pipeline.run_p(sc, CFG, llm=FakeLLM())
+    assert any("PromptLeak" in e for e in result["errors"])
+
+
+def test_p_works_with_a_real_client_that_refuses_unbound_calls(monkeypatch):
+    client = LLMClient(transport=lambda *a: pytest.fail("no model call expected"), use_cache=False)
+
+    def write_briefing(summary, llm):
+        with pytest.raises(PromptLeak):
+            llm.chat_json("brief", [{"role": "user", "content": sc["secrets"][0]}], {"type": "object"})
+        return "Briefing."
+
+    sc = p_scenario()
+    monkeypatch.setattr(pipeline.probe_agent, "probe", probe_finding())
+    monkeypatch.setattr(pipeline.compiler, "write_briefing", write_briefing)
+    result = pipeline.run_p(sc, CFG, llm=client)
+    assert result["errors"] == []
+
+
+def recovered_only(result):
+    return result["errors"] and all(e.startswith("recovered:") for e in result["errors"])
+
+
+def real_failure(result):
+    return any(not e.startswith("recovered:") for e in result["errors"])
+
+
+def test_p_compile_failure_then_approval_is_recovered_and_completes(monkeypatch):
+    calls = []
+    original = pipeline.compiler.compile_rule
+
+    def compile_rule(violation, *rest):
+        calls.append(violation)
+        if len(calls) == 1:
+            raise compiler.CompileError("bad output")
+        return original(violation, *rest)
+
+    monkeypatch.setattr(pipeline.probe_agent, "probe", probe_finding(P_VIOLATION))
+    monkeypatch.setattr(pipeline.compiler, "compile_rule", compile_rule)
+    monkeypatch.setattr(pipeline.verifier, "verify", scripted_verify("approved"))
+    result = pipeline.run_p(p_scenario(), CFG, llm=FakeLLM())
+    assert recovered_only(result)
+    assert metrics._completed(result)
+
+
+def test_p_probe_faults_it_handled_are_recovered(monkeypatch):
+    def probe(twin, scenario, cfg, llm):
+        found = probe_finding()(twin, scenario, cfg, llm)
+        found["errors"] = ["invalid call: unknown action", "falling back to the Q-learner"]
+        return found
+
+    monkeypatch.setattr(pipeline.probe_agent, "probe", probe)
+    result = pipeline.run_p(p_scenario(), CFG, llm=FakeLLM())
+    assert len(result["errors"]) == 2 and recovered_only(result)
+    assert metrics._completed(result)
+
+
+def test_p_fallback_briefing_is_recovered(monkeypatch):
+    def fail(summary, llm):
+        raise RuntimeError("model down")
+
+    monkeypatch.setattr(pipeline.probe_agent, "probe", probe_finding())
+    monkeypatch.setattr(pipeline.compiler, "write_briefing", fail)
+    result = pipeline.run_p(p_scenario(), CFG, llm=FakeLLM())
+    assert recovered_only(result) and "Deployed rules" in result["exports"]["briefing"]
+
+
+def test_p_escalation_alone_adds_no_error(monkeypatch):
+    monkeypatch.setattr(pipeline.probe_agent, "probe", probe_finding(P_VIOLATION))
+    monkeypatch.setattr(pipeline.verifier, "verify", scripted_verify("rejected", "rejected", "rejected"))
+    monkeypatch.setattr(pipeline.gate, "evaluate_only", lambda *a: "allow")
+    monkeypatch.setattr(pipeline.compiler, "write_briefing", lambda summary, llm: "Briefing.")
+    result = pipeline.run_p(p_scenario(), CFG, llm=FakeLLM())
+    assert result["gate_log"][0]["status"] == "escalated"
+    assert result["errors"] == []
+    assert metrics._completed(result)
+
+
+def test_p_compile_failures_that_end_escalated_are_real_failures(monkeypatch):
+    def compile_rule(*args):
+        raise compiler.CompileError("bad rule")
+
+    monkeypatch.setattr(pipeline.probe_agent, "probe", probe_finding(P_VIOLATION))
+    monkeypatch.setattr(pipeline.compiler, "compile_rule", compile_rule)
+    result = pipeline.run_p(p_scenario(), CFG, llm=FakeLLM())
+    assert real_failure(result) and not metrics._completed(result)
+
+
+def test_p_real_failures_have_no_prefix(monkeypatch):
+    def leak(summary, llm):
+        raise PromptLeak("blocked")
+
+    def refuse(*args, **kwargs):
+        raise gate.GateViolation("refused")
+
+    def crash(*args):
+        raise RuntimeError("crash")
+
+    def scenario_run(**patches):
+        with monkeypatch.context() as m:
+            m.setattr(pipeline.verifier, "verify", scripted_verify("approved"))
+            m.setattr(pipeline.probe_agent, "probe", patches.get("probe", probe_finding(P_VIOLATION)))
+            m.setattr(pipeline.gate, "evaluate_only", patches.get("evaluate", lambda *a: "deny"))
+            if "brief" in patches:
+                m.setattr(pipeline.compiler, "write_briefing", patches["brief"])
+            if "export" in patches:
+                m.setattr(pipeline.gate, "export", patches["export"])
+            return pipeline.run_p(p_scenario(), CFG, llm=FakeLLM())
+
+    for result in (
+        scenario_run(brief=leak),
+        scenario_run(export=refuse),
+        scenario_run(probe=crash),
+        scenario_run(evaluate=crash),
+    ):
+        assert real_failure(result), result["errors"]
+        assert not metrics._completed(result)
+
+    surviving = p_scenario()
+    surviving["world"]["users"]["alex"]["note"] = surviving["secrets"][0]
+    aborted = pipeline.run_p(surviving, CFG, llm=FakeLLM())
+    assert real_failure(aborted) and not metrics._completed(aborted)
+
+
+def test_p_a_briefing_the_gate_refuses_is_a_real_failure_even_with_the_fallback(monkeypatch):
+    original = pipeline.gate.export
+
+    def export(decisions, rules, briefing, canaries=None):
+        if briefing == "Written by the model.":
+            raise gate.GateViolation("canary in briefing")
+        return original(decisions, rules, briefing, canaries)
+
+    monkeypatch.setattr(pipeline.probe_agent, "probe", probe_finding())
+    monkeypatch.setattr(pipeline.compiler, "write_briefing", lambda summary, llm: "Written by the model.")
+    monkeypatch.setattr(pipeline.gate, "export", export)
+    result = pipeline.run_p(p_scenario(), CFG, llm=FakeLLM())
+    assert "Deployed rules" in result["exports"]["briefing"]
+    assert real_failure(result)
+
+
+@pytest.mark.parametrize("split", ["seen", "heldout", "benign"])
+def test_p_runs_mokshithas_real_agents_offline_without_leaks(split):
+    sc = real_scenario(split)
+    result = pipeline.run_p(sc, CFG, llm=FakeLLM())
+    report = scanner.scan(result["artifacts"], sc["secrets"], result["exports"])
+    assert (report["leaks"], report["escapes"]) == (0, 0), report["details"]
+    assert isinstance(result["exports"]["briefing"], str)
+    assert result["artifacts"]["llm_prompts"], "the real agents went through the client"
+    if split == "benign":
+        assert result["violations_found"] == [] and result["rules_deployed"] == []

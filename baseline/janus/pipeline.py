@@ -18,6 +18,13 @@ Safety properties kept here:
 - A failure at any point keeps what the run already did, so the scanner still sees its prompts and logs,
   and the operator still gets a briefing built from ids and policy references, with no LLM involved.
 
+Every agent gets a client bound to this scenario's id and canaries, so the secret scan runs on every prompt.
+
+`errors` follows bench.metrics: a fault the run recovered from starts with "recovered:" (a compile failure
+followed by an approved rule, probe faults the probe handled, a briefing replaced by the fallback). Real
+failures have no prefix (PromptLeak, a surviving canary, a Gate refusal, a crash, failed canary checks,
+compile failures on a violation that ended up escalated). Escalation itself is not an error.
+
 Violations of policies the scenario does not configure, or already enforces, are ignored: `policies.check`
 deliberately ignores enforcement (11.3), and acting on them would deploy unneeded rules on benign worlds.
 """
@@ -50,6 +57,7 @@ from janus.types import (
 )
 
 DEFAULT_REPAIR_ROUNDS = 3
+RECOVERED = "recovered: "
 
 
 @dataclass
@@ -71,8 +79,8 @@ class _Run:
             text = text.replace(secret, "[REDACTED]")
         self.errors.append(text[:300])
 
-    def error(self, state: str, exc: BaseException) -> None:
-        self.record(f"{state}: {type(exc).__name__}: {exc}")
+    def error(self, state: str, exc: BaseException, *, recovered: bool = False) -> None:
+        self.record(f"{RECOVERED}{state}: {type(exc).__name__}: {exc}" if recovered else f"{state}: {type(exc).__name__}: {exc}")
 
 
 def _strings(value: Any) -> Iterator[str]:
@@ -146,17 +154,22 @@ def _compile_and_verify(
     twin_view = {"world": twin, "violation": violation}
     feedback: str | None = None
     decision: GateDecision | None = None
+    failures: list[Exception] = []
     for round_number in range(1, max_rounds + 1):
         try:
             rule = compiler.compile_rule(violation, policy, twin_view, feedback, llm)
             decision = verifier.verify(rule, witness, verifier_view, run.approved)
         except PromptLeak:
+            for failure in failures:
+                run.error("Compile/Verify", failure)
             raise
         except Exception as exc:
-            run.error("Compile/Verify", exc)  # keeps `feedback`: the last verifier reason is still the useful one
+            failures.append(exc)  # keeps `feedback`: the last verifier reason is still the useful one
             continue
         decision["rounds"] = round_number
         if decision["status"] == "approved":
+            for failure in failures:
+                run.error("Compile/Verify", failure, recovered=True)
             run.approved.append(rule)
             run.gate_log.append(decision)
             run.log("Verify", f"{rule['id']} approved in round {round_number}")
@@ -164,6 +177,8 @@ def _compile_and_verify(
         feedback = decision["reason"]
         run.log("Verify", f"{rule['id']} rejected in round {round_number}")
 
+    for failure in failures:
+        run.error("Compile/Verify", failure)
     if decision is None:  # no attempt produced a rule, but the risk must still reach the operator
         decision = GateDecision(
             rule_id=f"unresolved-{violation['policy_id']}-{violation['action_id']}", status="rejected",
@@ -236,17 +251,22 @@ def _brief(
     run: _Run,
 ) -> dict[str, Any]:
     """Send the written briefing through the Gate, or the fallback if that fails; rules stay deployed either way."""
+    write_failure: Exception | None = None
+    written: str | None = None
     try:
         written = compiler.write_briefing(summary, llm)
-    except Exception as exc:  # includes PromptLeak; this is the last LLM call, so nothing is left to abort
+    except PromptLeak as exc:  # a real failure, but this is the last LLM call, so nothing is left to abort
         run.error("Brief", exc)
-        written = None
-    for text in (written, _fallback_briefing(summary)):
-        if text:
-            exported = _export_briefing(text, deployed, scenario, run)
-            if exported is not None:
-                return exported
-    return {"rules": deployed, "briefing": None}
+    except Exception as exc:
+        write_failure = exc
+    if written:
+        exported = _export_briefing(written, deployed, scenario, run)
+        if exported is not None:
+            return exported
+    exported = _export_briefing(_fallback_briefing(summary), deployed, scenario, run)
+    if write_failure is not None:
+        run.error("Brief", write_failure, recovered=exported is not None)
+    return exported if exported is not None else {"rules": deployed, "briefing": None}
 
 
 def _refuse_export(violations: list[Violation], run: _Run) -> None:
@@ -289,7 +309,7 @@ def _execute(
         probed = probe_agent.probe(twin, view, cfg, llm)
         found, witnesses = probed["violations"], probed["witnesses"]
         for text in probed["errors"]:
-            run.record(f"Probe: {text}")
+            run.record(f"{RECOVERED}Probe: {text}")  # the probe returned, so it handled these itself
     except PromptLeak:
         raise
     except Exception as exc:
@@ -342,7 +362,8 @@ def run_p(scenario: Scenario, cfg: PipelineConfig, llm: Any = None) -> RunResult
         try:
             if llm is None:
                 llm = LLMClient(use_cache=cfg.get("use_cache", True))
-            _execute(scenario, twin, telemetry, cfg, llm, run, out)
+            bound = llm.bind(scenario["id"], scenario["secrets"])
+            _execute(scenario, twin, telemetry, cfg, bound, run, out)
         except Exception as exc:  # includes PromptLeak; the run stops but keeps what it already did
             run.error("Aborted", exc)
             _close_aborted(scenario, out, run)
