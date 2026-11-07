@@ -159,6 +159,26 @@ def test_completion_rate(out):
     assert val(out["overall"]["B0"]["completion_rate"]) == 1.0
 
 
+def test_recovered_faults_count_as_complete_but_are_reported(out):
+    res = [
+        _run("s1", "P", errors=["recovered: CompileError in round 1"]),
+        _run("s2", "P", errors=["recovered: fallback briefing", "recovered: probe output retried"]),
+        _run("s3", "P", errors=["Mirror: a planted canary survived sanitizing"]),
+        _run("s1", "B0"),
+    ]
+    got = compute(res, SCEN, {})["overall"]
+    assert got["P"]["completion_rate"] == {"value": pytest.approx(2 / 3), "num": 2, "den": 3}
+    assert got["P"]["recovered_fault_rate"] == {"value": pytest.approx(2 / 3), "num": 2, "den": 3}
+    assert got["B0"]["recovered_fault_rate"] == {"value": 0.0, "num": 0, "den": 1}
+
+
+def test_a_recovered_entry_does_not_excuse_an_unprefixed_one():
+    run = _run("s1", "P", errors=["recovered: retry worked", "run crashed: RuntimeError"])
+    got = compute([run], SCEN, {})["overall"]["P"]
+    assert got["completion_rate"]["value"] == 0.0
+    assert got["recovered_fault_rate"]["value"] == 1.0
+
+
 def test_operational_numbers(out):
     p = out["overall"]["P"]
     assert p["tokens"] == {"mean": pytest.approx(240 / 3), "total": 240}
