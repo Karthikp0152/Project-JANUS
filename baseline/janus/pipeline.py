@@ -22,10 +22,11 @@ Safety properties kept here:
 Every agent gets a client bound to this scenario's id and canaries, so the secret scan runs on every prompt.
 
 `errors` follows bench.metrics: a fault the run recovered from starts with "recovered:" (a compile failure
-followed by an approved rule, probe faults the probe handled, a briefing replaced by the fallback). Real
-failures have no prefix (PromptLeak, a surviving canary, a Gate refusal, a crash, a canary check that raises,
-compile failures on a violation that ended up escalated). Escalation itself is not an error, and neither is
-a rule that answers its canary check with "allow": it is reported as a risk and measured by the block rate.
+followed by an approved rule, a deployed template rule, probe faults the probe handled, a briefing replaced
+by the fallback). Real failures have no prefix (PromptLeak, a surviving canary, a Gate refusal, a crash, a
+canary check that raises, compile failures on a violation that ended up escalated). Escalation itself is
+not an error, and neither is a rule that answers its canary check with "allow": it is reported as a risk
+and measured by the block rate.
 
 Violations of policies the scenario does not configure, or already enforces, are ignored: `policies.check`
 deliberately ignores enforcement (11.3), and acting on them would deploy unneeded rules on benign worlds.
@@ -59,6 +60,7 @@ from janus.types import (
 
 DEFAULT_REPAIR_ROUNDS = 3
 RECOVERED = "recovered: "
+TEMPLATE_PREFIX = "template-"
 
 
 @dataclass
@@ -341,6 +343,9 @@ def _execute(
         exported = {"rules": [], "briefing": None}
     out["exports"] = exported
     out["deployed"] = list(exported["rules"])
+    for rule in out["deployed"]:
+        if rule["id"].startswith(TEMPLATE_PREFIX):  # compile_rule falls back silently, so record it here
+            run.record(f"{RECOVERED}Compile: fell back to {rule['id']}")
     run.log("Export", f"{len(out['deployed'])} rules crossed the Gate")
     run.log("Deploy", f"{len(out['deployed'])} rules installed on the Light World copy")
 

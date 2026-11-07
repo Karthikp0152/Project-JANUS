@@ -565,6 +565,7 @@ def canary_run(monkeypatch, evaluate):
 
     monkeypatch.setattr(pipeline.probe_agent, "probe", probe_finding(P_VIOLATION))
     monkeypatch.setattr(pipeline.verifier, "verify", scripted_verify("approved"))
+    monkeypatch.setattr(pipeline.compiler, "compile_rule", lambda *a: {**template_rule(), "id": "rule-P4-close_ticket"})
     monkeypatch.setattr(pipeline.gate, "evaluate_only", evaluate)
     monkeypatch.setattr(pipeline.compiler, "write_briefing", write_briefing)
     return pipeline.run_p(p_scenario(), CFG, llm=FakeLLM()), summaries[0]
@@ -935,3 +936,52 @@ def test_reported_seed_defaults_to_the_scenario_seed():
     assert baselines.run_b0(sc, {})["seed"] == 7
     assert pipeline.run_p(sc, {}, llm=FakeLLM())["seed"] == 7
     assert baselines.run_b0(sc, {"seed": 9})["seed"] == 9
+
+
+# ---------------------------------------------------------------------------
+# Template rules count as recovered faults
+# ---------------------------------------------------------------------------
+def template_rule(policy_id="P4"):
+    return {
+        "id": f"template-{policy_id}", "kind": "workflow_rule", "applies_to": "close_ticket",
+        "conditions": [{"field": "ticket.comment_count", "op": "==", "value": 0}], "effect": "deny",
+        "require_field": None, "addresses_policy": policy_id, "rationale": "Template rule.",
+    }
+
+
+def test_p_deployed_template_rule_is_a_recovered_fault(monkeypatch):
+    monkeypatch.setattr(pipeline.probe_agent, "probe", probe_finding(P_VIOLATION))
+    monkeypatch.setattr(pipeline.compiler, "compile_rule", lambda *a: template_rule())
+    monkeypatch.setattr(pipeline.verifier, "verify", scripted_verify("approved"))
+    monkeypatch.setattr(pipeline.gate, "evaluate_only", lambda *a: "deny")
+    monkeypatch.setattr(pipeline.compiler, "write_briefing", lambda summary, llm: "Briefing.")
+    result = pipeline.run_p(p_scenario(), CFG, llm=FakeLLM())
+    assert result["errors"] == ["recovered: Compile: fell back to template-P4"]
+    assert metrics._completed(result)
+    assert result["exports"]["briefing"] == "Briefing.", "a recovered fault adds no incomplete warning"
+
+
+def test_p_template_rule_that_never_deploys_is_not_recorded(monkeypatch):
+    def refuse(*args, **kwargs):
+        raise gate.GateViolation("refused")
+
+    monkeypatch.setattr(pipeline.probe_agent, "probe", probe_finding(P_VIOLATION))
+    monkeypatch.setattr(pipeline.compiler, "compile_rule", lambda *a: template_rule())
+    monkeypatch.setattr(pipeline.verifier, "verify", scripted_verify("rejected", "rejected", "rejected"))
+    rejected = pipeline.run_p(p_scenario(), CFG, llm=FakeLLM())
+    assert not any("fell back" in e for e in rejected["errors"])
+
+    monkeypatch.setattr(pipeline.verifier, "verify", scripted_verify("approved"))
+    monkeypatch.setattr(pipeline.gate, "export", refuse)
+    refused = pipeline.run_p(p_scenario(), CFG, llm=FakeLLM())
+    assert not any("fell back" in e for e in refused["errors"])
+
+
+def test_p_llm_written_rule_is_not_recorded_as_a_template(monkeypatch):
+    rule = {**template_rule(), "id": "rule-P4-close_ticket"}
+    monkeypatch.setattr(pipeline.probe_agent, "probe", probe_finding(P_VIOLATION))
+    monkeypatch.setattr(pipeline.compiler, "compile_rule", lambda *a: rule)
+    monkeypatch.setattr(pipeline.verifier, "verify", scripted_verify("approved"))
+    monkeypatch.setattr(pipeline.gate, "evaluate_only", lambda *a: "deny")
+    monkeypatch.setattr(pipeline.compiler, "write_briefing", lambda summary, llm: "Briefing.")
+    assert pipeline.run_p(p_scenario(), CFG, llm=FakeLLM())["errors"] == []
