@@ -156,10 +156,10 @@ EXAMPLE_RULES: dict[str, DefenseRule] = {
     "payment_control": {
         "id": "ex-payment-p3", "kind": "payment_control", "applies_to": "create_payment",
         "conditions": [
-            {"field": "amount", "op": ">", "value": 500},
+            {"field": "amount", "op": ">", "value": 2000},
         ],
         "effect": "require", "require_field": "dual_approved", "addresses_policy": "P3",
-        "rationale": "Payments above the dual-approval threshold (500) need dual approval.",
+        "rationale": "Payments above the world threshold (2000 in seen worlds) need dual approval.",
     },
     "workflow_rule": {
         "id": "ex-workflow-p4", "kind": "workflow_rule", "applies_to": "close_ticket",
@@ -204,7 +204,7 @@ EXAMPLE_RULES: dict[str, DefenseRule] = {
 }
 
 
-_REQUIRED_RULE_KEYS = (
+RULE_KEYS = (
     "id", "kind", "applies_to", "conditions", "effect",
     "require_field", "addresses_policy", "rationale",
 )
@@ -214,7 +214,7 @@ def validate_schema(rule: DefenseRule) -> tuple[bool, str]:
     """V1: well-formed, allowed kind and ops. Returns (ok, reason)."""
     if not isinstance(rule, dict):
         return False, "rule is not a mapping"
-    missing = [k for k in _REQUIRED_RULE_KEYS if k not in rule]
+    missing = [k for k in RULE_KEYS if k not in rule]
     if missing:
         return False, f"missing keys: {', '.join(missing)}"
     if rule["kind"] not in ALLOWED_RULE_KINDS:
