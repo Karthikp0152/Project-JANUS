@@ -14,6 +14,7 @@ import random
 from typing import Any
 
 from janus.compiler import world_summary
+from janus.llm_client import RECOVERED
 from janus.types import Action, CatalogEntry, ProbeResult, Scenario, Violation, Witness
 
 # COORDINATION 11.4: the closed argument names for each of the 9 tools.
@@ -200,7 +201,7 @@ def _ask_llm(
     run.tokens_in += result["tokens_in"]
     run.tokens_out += result["tokens_out"]
     if result["data"] is None:
-        run.errors.append(f"probe LLM failed: {result['error']}")
+        run.errors.append(f"{RECOVERED}probe LLM failed: {result['error']}")
     return result["data"]
 
 
@@ -217,7 +218,7 @@ def _llm_probe(twin: dict[str, Any], scenario: Scenario, llm: Any, run: _Run, ep
                 return False
             action, reason = guard(reply, catalog)
             if action is None:
-                run.errors.append(f"invalid call: {reason}")
+                run.errors.append(f"{RECOVERED}invalid call: {reason}")
                 run.log("llm", episode, step, f"invalid ({reason})", REWARD_INVALID)
                 continue
             world, reward = run.step(world, action, history, step)
@@ -279,6 +280,6 @@ def probe(twin: dict[str, Any], scenario: Scenario, cfg: Any, llm: Any) -> Probe
     episodes = cfg.get("episodes", 5)
     seed = cfg.get("seed", scenario.get("seed", 598))
     if not _llm_probe(twin, scenario, llm, run, episodes, horizon):
-        run.errors.append("falling back to the Q-learner")
+        run.errors.append(f"{RECOVERED}falling back to the Q-learner")
         _q_probe(twin, run, seed, horizon)
     return run.result()

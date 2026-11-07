@@ -12,7 +12,7 @@ from typing import Any
 
 from aswa.rme import sanitize_value
 from janus.compiler import KIND_HINT, normalize_rule, rule_schema, v1_problem, world_summary
-from janus.llm_client import LLMClient, PromptLeak, find_leak
+from janus.llm_client import RECOVERED, LLMClient, PromptLeak, find_leak
 from janus.types import DefenseRule, GateDecision, RunResult, Scenario
 
 B1_SYSTEM = (
@@ -78,7 +78,7 @@ def run_b1(scenario: Scenario, cfg: Any, llm: Any = None) -> RunResult:
             if approved:
                 rules.append(rule)
             else:
-                errors.append(f"{rule['id']} rejected: {v1 or v2}")
+                errors.append(f"{RECOVERED}{rule['id']} rejected: {v1 or v2}")
             gate_log.append(
                 GateDecision(
                     rule_id=rule["id"],
