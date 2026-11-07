@@ -69,6 +69,19 @@ def _default_runners() -> dict[str, Runner]:
     return {"B0": b0, "B1": b1, "P": p}
 
 
+def _warm_imports() -> None:
+    """Import every module a runner uses once, on the calling thread, before any worker thread starts.
+    Lazy first imports from several threads at once can raise _DeadlockError or ImportError (seen as
+    "run crashed" entries). A module that really is missing is reported per run, not here."""
+    import importlib
+
+    for name in ("aswa.pipeline", "janus.baselines", "janus.b1", "janus.pipeline", "janus.rules", "janus.verifier", "janus.gate"):
+        try:
+            importlib.import_module(name)
+        except Exception:
+            pass
+
+
 def _failed(sc: Scenario, system: str, cfg: PipelineConfig, exc: BaseException, seconds: float) -> RunResult:
     return RunResult(
         scenario_id=sc["id"], system=system, seed=cfg.get("seed", DEFAULT_SEED),
@@ -150,6 +163,7 @@ def evaluate(
         return res, scan, verdicts
 
     if workers > 1:
+        _warm_imports()
         with ThreadPoolExecutor(max_workers=workers) as pool:
             outcomes = list(pool.map(one, jobs))
     else:

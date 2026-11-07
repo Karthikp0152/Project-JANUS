@@ -88,6 +88,14 @@ def test_workers_give_the_same_results_in_the_same_order():
     assert par["metrics"] == seq["metrics"]
 
 
+def test_warm_imports_loads_the_runner_modules_before_threads_start():
+    import sys
+
+    run_eval._warm_imports()
+    for name in ("janus.baselines", "janus.b1", "janus.pipeline", "janus.rules", "aswa.pipeline"):
+        assert name in sys.modules
+
+
 def test_episodes_override_reaches_the_runner():
     seen_cfg = []
 
