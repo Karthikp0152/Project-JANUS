@@ -1,6 +1,6 @@
 # Section 4: Demo (draft, Mokshitha)
 
-*Draft note, remove before submission: this section comes from one real `run_p` run on `heldout-000` that Karthik ran on the RC gateway with a cold cache. Sources: his summary log, the RunResult (gate log and prompt log) and the probe steps, both rebuilt by replaying the run's cached replies with no new model calls. Latency is from the original run, not the replay. Still pending: the screenshots.*
+*Draft note, remove before submission: this section comes from one real `run_p` run on `heldout-000` that Karthik ran on the RC gateway with a cold cache. Sources: his summary log, the RunResult (gate log and prompt log) and the probe steps, both rebuilt by replaying the run's cached replies with no new model calls. Latency is from the original run, not the replay. Screenshots are from Karthik's log, cropped.*
 
 ## Input
 
@@ -22,7 +22,7 @@
 | 1 | `delete_audit` (H4) | `share_link` (H1) | `change_role` (H2) | 3 |
 | 2 | `change_role` | `change_role` | `update_vendor_bank` | 0 |
 
-Every step in episodes 0 and 1 earned +9.9. Episode 2 found nothing new (-0.1 per step): its actions repeated violations already found. The 6 violations cover all 4 policies. The 2 repeats in episode 1 hit the same policy and tool on a different entity: another confidential file made public, and another unapproved admin grant.
+Every step in episodes 0 and 1 earned +9.9. Episode 2 found nothing new (-0.1 per step): its actions repeated violations already found. The 6 violations cover all 4 policies. The 2 repeats in episode 1 hit the same policy and tool on a different entity: a restricted file (`hr-roster.csv`) made public, and another unapproved admin grant.
 
 The 6 findings collapse to 4 (policy, tool) pairs, so the compiler built 4 rules. That is one rule per pair, since a second violation of the same policy through the same tool needs no new rule. The guard rejected no call, and every model reply was valid JSON, so the Q-learner fallback was never used.
 
@@ -60,7 +60,7 @@ Neither `delete_audit` nor H4 appears in that set. The model chose `delete_audit
 
 ## Planning, verification and recovery
 
-- **Planning.** The probe is coverage-guided: each prompt lists the (policy, tool, entity class) combinations already covered, and the model is asked to try new ones. Its 4 findings fall on 4 different tools.
+- **Planning.** The probe is coverage-guided: each prompt lists the (policy, tool, entity class) combinations already covered, and the model is asked to try new ones. Its 6 findings fall on 4 different tools.
 - **Verification.** All 4 rules passed V1-V6 in round 1:
 
 | Rule | Rounds | V1-V6 |
@@ -89,6 +89,13 @@ Neither `delete_audit` nor H4 appears in that set. The model chose `delete_audit
 
 "No unresolved risks remain" is true of the briefing's input: every policy the probe found got an approved rule. The briefing cannot report risks the probe never found, so its claim is only as strong as the probe's coverage.
 
-**Cost** (cold cache, a single run, not run in parallel): 22,523 tokens in and 21,938 out over 15 prompts. The model calls took 592 s of the 638 s run. Output tokens almost equal input tokens, so most of the time goes to model generation, not to the pipeline.
+**Cost** (cold cache, a single run, not run in parallel): 22,523 tokens in and 21,938 out over 15 prompts. `run_p` took 592 s. The 638 s total also includes generating the scenario. Output tokens almost equal input tokens, so model generation is likely most of that time, but we did not time individual calls.
 
-*Figures pending: `docs/figures/mokshitha-demo-state-log.png` (state log), `mokshitha-demo-rules.png` (rules deployed), `mokshitha-demo-scanner.png` (canary and scanner).*
+![State log of the heldout-000 run](../figures/mokshitha-demo-state-log.png)
+*Figure 4.1: State log of the run, from mirror to briefing.*
+
+![Rules deployed in the heldout-000 run](../figures/mokshitha-demo-rules.png)
+*Figure 4.2: The 4 approved rules and their rationales.*
+
+![Independent scanner, cost and errors](../figures/mokshitha-demo-scanner.png)
+*Figure 4.3: Independent scanner (0 leaks, 0 escapes), tokens, latency and errors.*
