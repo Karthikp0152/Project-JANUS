@@ -21,4 +21,14 @@ Each rule gets only two checks: V1 (`rules.validate_schema`) and V2 (rule fields
 
 ## Results
 
-*Pending real runs. Tokens in and out, USD and seconds per system go here.*
+Cost per run from the cold pilot, the same numbers as Section 3d:
+
+| System | Tokens per run (seen / held-out / benign) | USD | Seconds per run (seen / held-out) |
+|---|---|---|---|
+| B0 | 0 | 0 | 0 |
+| B1 | 2,586 / 3,331 / 4,626 | 0 (RC is free) | 41 / 98 |
+| P | 45,791 / 43,898 / 36,359 | 0 (RC is free) | 631 / 639 |
+
+The seconds come from 12 runs in parallel, so a lone run is faster. The lone held-out P run in Section 4 took 592 s of model time.
+
+B1 is cheap: one call per scenario, at about 1/8 to 1/18 of P's tokens. It fails one hard gate by design: its unverified-deploy rate is 1.000 on every split, since no rule is replayed. Its recall is also 0.000 on every split, because it never runs a probe. B1 is still a strong baseline. On held-out policies it matches P on coverage and block rate, both 1.000. On seen policies it falls behind: its rules block 0.933 of hidden variants and over-block 0.102 of benign actions, against P's 1.000 and 0.000.
