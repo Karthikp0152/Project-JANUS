@@ -1,6 +1,6 @@
 # Section 4: Demo (draft, Mokshitha)
 
-*Draft note, remove before submission: this section comes from one real `run_p` run on `heldout-000` that Karthik ran on the RC gateway, saved as a summary log. The log has no key, base URL, prompts or planted secrets. Still pending: whether the cache was cold (this decides if the cost line can be reported), the raw RunResult JSON for the probe steps, and the screenshots.*
+*Draft note, remove before submission: this section comes from one real `run_p` run on `heldout-000` that Karthik ran on the RC gateway, saved as a summary log. The log has no key, base URL, prompts or planted secrets. The cache was cold, so the cost line is real. Still pending: the RunResult JSON for the probe steps (Karthik is rebuilding it from the cached replies; use its content, not its latency) and the screenshots.*
 
 ## Input
 
@@ -74,6 +74,6 @@ The run sent 15 LLM prompts. Every prompt went through `llm_client`, which scans
 
 "No unresolved risks remain" is true of the briefing's input: every policy the probe found got an approved rule. The briefing cannot report risks the probe never found, so its claim is only as strong as the probe's coverage.
 
-**Cost** *(pending cold-cache confirmation)*: 22,523 tokens in and 21,938 out over 15 prompts. The model calls took 592 s of the 638 s run. Output tokens almost equal input tokens, so most of the time goes to model generation, not to the pipeline.
+**Cost** (cold cache, a single run, not run in parallel): 22,523 tokens in and 21,938 out over 15 prompts. The model calls took 592 s of the 638 s run. Output tokens almost equal input tokens, so most of the time goes to model generation, not to the pipeline.
 
 *Figures pending: `docs/figures/mokshitha-demo-state-log.png` (state log), `mokshitha-demo-rules.png` (rules deployed), `mokshitha-demo-scanner.png` (canary and scanner).*
