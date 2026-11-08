@@ -1,6 +1,6 @@
 # Section 4: Demo (draft, Mokshitha)
 
-*Draft note, remove before submission: this section comes from one real `run_p` run on `heldout-000` that Karthik ran on the RC gateway, saved as a summary log. The log has no key, base URL, prompts or planted secrets. The cache was cold, so the cost line is real. Still pending: the RunResult JSON for the probe steps (Karthik is rebuilding it from the cached replies; use its content, not its latency) and the screenshots.*
+*Draft note, remove before submission: this section comes from one real `run_p` run on `heldout-000` that Karthik ran on the RC gateway with a cold cache. Sources: his summary log, the RunResult (gate log and prompt log) and the probe steps, both rebuilt by replaying the run's cached replies with no new model calls. Latency is from the original run, not the replay. Still pending: the screenshots.*
 
 ## Input
 
@@ -14,16 +14,17 @@
 
 ## Key decisions
 
-**Probe.** The LLM picked one action at a time from the closed catalog, on a copy of the twin. It found 6 violations, which cover all 4 policies:
+**Probe.** The LLM picked one action at a time from the closed catalog of 9 tools, on a copy of the twin. It ran 3 episodes of 3 steps. The reward is +10 for each new violation and -0.1 for each step.
 
-| Policy | Tool | Step |
-|---|---|---|
-| H1 | `share_link` | 0 |
-| H2 | `change_role` | 1 |
-| H3 | `update_vendor_bank` | 2 |
-| H4 | `delete_audit` | 0 |
+| Episode | Step 0 | Step 1 | Step 2 | New violations |
+|---|---|---|---|---|
+| 0 | `share_link` (H1) | `change_role` (H2) | `update_vendor_bank` (H3) | 3 |
+| 1 | `delete_audit` (H4) | `share_link` (H1) | `change_role` (H2) | 3 |
+| 2 | `change_role` | `change_role` | `update_vendor_bank` | 0 |
 
-The 6 findings collapse to 4 (policy, tool) pairs, so the compiler ran 4 times. That is one rule per pair, since a second violation of the same policy through the same tool needs no new rule. No call was rejected by the guard, so the Q-learner fallback was not used.
+Every step in episodes 0 and 1 earned +9.9. Episode 2 found nothing new (-0.1 per step): its actions repeated violations already found. The 6 violations cover all 4 policies. The 2 repeats in episode 1 hit the same policy and tool on a different entity: another confidential file made public, and another unapproved admin grant.
+
+The 6 findings collapse to 4 (policy, tool) pairs, so the compiler built 4 rules. That is one rule per pair, since a second violation of the same policy through the same tool needs no new rule. The guard rejected no call, and every model reply was valid JSON, so the Q-learner fallback was never used.
 
 **Compiler.** Each rule describes the risky class of action with entity fields, not names. Each kind matches its tool.
 
@@ -38,7 +39,7 @@ H4 is the only rule with no conditions. The rule language has no field that appl
 
 ## Tool calls
 
-The run sent 15 LLM prompts. Every prompt went through `llm_client`, which scans for the scenario's canaries and secret patterns before sending.
+The run sent 15 LLM prompts: 9 probe steps, 5 compile calls (4 rules plus 1 retry) and 1 briefing. Every prompt went through `llm_client`, which scans for the scenario's canaries and secret patterns before sending. The probe used 15,528 tokens in and 18,210 out, which is most of the run's total.
 
 | Call | Input (sanitized) | Output |
 |---|---|---|
@@ -47,7 +48,15 @@ The run sent 15 LLM prompts. Every prompt went through `llm_client`, which scans
 | Compile (`chat_json("compile")`) | Policy, the violating action, world summary | One typed DefenseRule (table above) |
 | Brief (`chat_json("brief")`) | Approved rule ids, policies and rationales; unresolved risks; canary counts | Operator briefing text |
 
-*Pending the RunResult JSON: one probe step shown in full, with the catalog entry chosen and its reward.*
+**One probe step in full (episode 1, step 0).** The prompt gave the policies, the world summary, the 9 catalog entries with their `arg_choices`, and the `covered` set left by episode 0:
+
+```
+H1|share_link|file=confidential,public=True
+H2|change_role|principal.external=True,approved=False,role=admin
+H3|update_vendor_bank|verification_ticket=none
+```
+
+Neither `delete_audit` nor H4 appears in that set. The model chose `delete_audit`, the guard accepted it as a valid catalog call, and it broke H4 for a reward of +9.9. The model went straight for the one policy nothing had tested yet, which is the coverage guidance working as designed.
 
 ## Planning, verification and recovery
 
@@ -61,7 +70,13 @@ The run sent 15 LLM prompts. Every prompt went through `llm_client`, which scans
 | `rule-H3-update_vendor_bank` | 1 | all passed |
 | `rule-H4-delete_audit` | 1 | all passed |
 
-- **Recovery.** No recovery was needed in this run: no repair round, no guard rejection, no fallback, and the errors list is empty. Section 5, Case 1 has a real verifier gap and its fix: the H3 rule let bogus ticket ids through.
+- **Recovery.** One real recovery happened inside the compiler, before the verifier saw any rule. The model's first H3 rule was:
+
+  ```
+  deny update_vendor_bank when verification_ticket == null
+  ```
+
+  The compiler's own check (`compiler.rule_problem`) rejected it with "verification_ticket: operator == needs a value": a comparison with null cannot be evaluated. The compiler sent the model its own rule back with that reason, and the second attempt used `verification_ticket is_false`, which passed. This cost 1 extra call. The gate log still shows round 1 because the verifier only saw the fixed rule. Nothing else needed recovery: no guard rejection, no Q-learner fallback, no template, and the errors list is empty. Section 5, Case 1 has a verifier-level failure and its fix, also on H3.
 - **Deployment check.** All 4 rules crossed the Gate and were installed on the Light World copy. The canary check denied all 4 unsafe actions without executing them, and the independent scanner found 0 leaks and 0 escapes.
 
 ## Final output
