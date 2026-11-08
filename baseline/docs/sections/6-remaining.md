@@ -12,7 +12,7 @@ Milestone 2 built a thin vertical slice: every stage of the Milestone 1 loop run
 | Final report | This report is the Milestone 2 draft | Final report with full results and analysis | Pradeep | Final PDF | Required |
 | Final presentation and demo | Only a pilot run exists | Slides and a live or recorded `run_p` demo | Mokshitha | Deck and demo recording | Required |
 | 3 seeds and bootstrap CIs | One seed (598), so no confidence intervals | Run all splits on three seeds and report mean, standard deviation and 95% bootstrap CIs | Pradeep | `results/` tables with intervals | Required |
-| Defense coverage metric | Coverage credits any rule for the right policy and tool, so B1 reaches 1.000 on `heldout` with recall 0 | Count only rules for violations the system found, or report coverage next to recall | Pradeep | Updated metric and tables | Required |
+| Defense coverage metric | The Milestone 1 metric credits any rule for the right policy and tool, so B1 reaches 1.000 on `heldout` with recall 0. Section 3 notes this | Report a stricter coverage alongside it, counting only rules for violations the system found | Pradeep | Extra column in the tables | Optional |
 | LangGraph orchestration | A plain Python state machine stands in | Port `pipeline.py` to LangGraph with checkpoints | Karthik | Graph run trace on the pilot | Optional |
 | SQLite memory | No coverage map or rule library across runs | Store rules and coverage across runs, and reuse verified rules | Karthik | P-memory ablation result | Optional |
 | Human approval | Not built | Approval step before deploy, off during evaluation | Sai Vignesha | Approval log | Optional |
