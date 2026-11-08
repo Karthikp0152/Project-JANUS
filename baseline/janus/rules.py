@@ -74,7 +74,8 @@ def _arg(name: str) -> FieldResolver:
 
 
 def _principal_external(action: Action, world: dict[str, Any]) -> bool:
-    return bool(world["users"][action["args"]["principal"]]["external"])
+    # Same rule as the oracle: an unknown principal is not external (no KeyError).
+    return policies._external(world, action["args"]["principal"])
 
 
 def _to_external(action: Action, world: dict[str, Any]) -> bool:
@@ -86,19 +87,23 @@ def _attachment_sensitivity(action: Action, world: dict[str, Any]) -> str | None
     attachment = action["args"]["attachment"]
     if attachment is None:
         return None
-    return world["files"][attachment]["sensitivity"]
+    file = world.get("files", {}).get(attachment)
+    return None if file is None else file["sensitivity"]
 
 
-def _folder_label(action: Action, world: dict[str, Any]) -> str:
-    return world["folders"][action["args"]["folder"]]["label"]
+def _folder_label(action: Action, world: dict[str, Any]) -> str | None:
+    folder = world.get("folders", {}).get(action["args"]["folder"])
+    return None if folder is None else folder["label"]
 
 
-def _file_sensitivity(action: Action, world: dict[str, Any]) -> str:
-    return world["files"][action["args"]["file"]]["sensitivity"]
+def _file_sensitivity(action: Action, world: dict[str, Any]) -> str | None:
+    file = world.get("files", {}).get(action["args"]["file"])
+    return None if file is None else file["sensitivity"]
 
 
-def _ticket_comment_count(action: Action, world: dict[str, Any]) -> int:
-    return len(world["tickets"][action["args"]["ticket_id"]]["comments"])
+def _ticket_comment_count(action: Action, world: dict[str, Any]) -> int | None:
+    ticket = world.get("tickets", {}).get(action["args"]["ticket_id"])
+    return None if ticket is None else len(ticket["comments"])
 
 
 def _verification_ticket(action: Action, world: dict[str, Any]) -> str | None:
@@ -239,6 +244,11 @@ def _check_rule(rule: Any) -> tuple[bool, str]:
             return False, "unknown field"
         if not isinstance(cond["op"], str) or cond["op"] not in ALLOWED_OPS:
             return False, "unknown op"
+        value = cond["value"]
+        if cond["op"] in (">", ">=", "<", "<=") and (isinstance(value, bool) or not isinstance(value, (int, float))):
+            return False, "ordering op needs a number value"
+        if cond["op"] in ("in", "not_in") and not isinstance(value, list):
+            return False, "in/not_in needs a list value"
     return True, "ok"
 
 
@@ -253,6 +263,8 @@ def validate_schema(rule: DefenseRule) -> tuple[bool, str]:
 def _condition_holds(cond: dict[str, Any], action: Action, world: dict[str, Any]) -> bool:
     value = FIELDS[cond["field"]](action, world)
     op, expected = cond["op"], cond["value"]
+    if op in (">", ">=", "<", "<=") and (value is None or expected is None):
+        return False  # an unresolved entity never satisfies an ordering test
     if op == "==":
         return value == expected
     if op == "!=":
