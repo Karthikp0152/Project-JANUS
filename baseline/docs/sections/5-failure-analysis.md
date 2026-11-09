@@ -13,9 +13,20 @@ Each failure gives where it happened, the evidence, what we saw and what we thin
 | Fix | `make_variants` now adds a variant with an id that names no ticket (`T-UNKNOWN-n`). `enforce` reads the resolved value of `require_field`, so an unknown id resolves to `None` and is denied. Tests: `tests/test_rules.py`, H3 section. |
 | How to check | Re-run `heldout`. The 36 cases should now be rejected at V4, and the hidden-probe misses should drop. |
 
-## Case 2: pending
+## Case 2: compiler wrote a null comparison (compiler, before the verifier)
 
-*Pending Mokshitha's real failing logs (planned for Friday night). Candidate categories from the plan: rule over-blocks benign work (V5), a held-out rule misses variants (V4), the repair loop runs out of rounds, and a rule kind does not match the policy. Each gets its own table once a real trace is in hand.*
+| Part | Content |
+|---|---|
+| Where it failed | Compiler, before the verifier. The rule never reached V1. |
+| Evidence | Karthik's `heldout-000` run (cold cache, same run as Section 4): prompt log in the rebuilt RunResult (`janus-demo-heldout-000-demo_run.json`), compile call 4 of 5. Reported by Karthik; the RunResult file has not yet been checked against this text. |
+| Observed | The first H3 rule was `deny` when `verification_ticket == null`. `compiler.rule_problem` rejected it with "operator == needs a value". |
+| Suspected cause | The model wrote `==` with a null value instead of `is_false`. The compiler's check rejected it, so the rule was never evaluated. The rejection comes from `compiler.rule_problem`; the reason it rejects a null `==` value is not yet confirmed from the code. |
+| Fix | The compiler returned the error to the model. The retry used `verification_ticket is_false`, which passed V1–V6 in round 1. Cost: one extra compile call. |
+| How to check | Open the RunResult file and confirm call 4 and the rejection message. Then check that the second H3 rule is the one in the verifier's decision. |
+
+## Case 3: pending
+
+*Pending Mokshitha's logs for the other categories (rule over-blocks benign work, the repair loop runs out of rounds, a rule kind does not match the policy). Each gets its own table once a real trace is in hand.*
 
 ## Broader limitations
 
