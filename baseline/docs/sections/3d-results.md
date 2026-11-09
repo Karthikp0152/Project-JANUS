@@ -50,8 +50,8 @@ Bold means a hard gate is not met. Denominators: 240 hidden variants and 303 ben
 | System | Tokens per run (seen / held-out / benign) | Cost | Seconds per run (seen / held-out) |
 |---|---|---|---|
 | B0 | 0 | 0 | 0 |
-| B1 | 2,586 / 3,331 / 4,626 | 0 (RC is free) | 41 / 98 |
-| P | 45,791 / 43,898 / 36,359 | 0 (RC is free) | 631 / 639 |
+| B1 | 2,586 / 3,331 / 4,626 | 0 (no per-token cost configured) | 41 / 98 |
+| P | 45,791 / 43,898 / 36,359 | 0 (no per-token cost configured) | 631 / 639 |
 
 Latency is wall time from the first, cold run with 12 runs in parallel, so a lone run would be faster. The re-runs after the fixes replayed cached model replies, so their latency columns are not real and are not used here. P uses about 8 to 18 times the tokens of B1, depending on the split.
 
