@@ -101,13 +101,3 @@ After merge, use the actual commits present on `origin/main` for the final
 contribution record, as COORDINATION requires. Preserve this interaction's full
 generative-AI trace for the course disclosure; this handoff is not that full trace.
 
-## Ready-to-share team update
-
-> My complete data contribution is pushed to feat/data-janusbench in PR #2,
-> including generate, check, apply, catalog, N=3 ground truth, hidden variants,
-> 12/12/6 exports, the sanity table, label-inspection evidence and dataset report.
-> P1/H1/H3 match COORDINATION section 15. All 137 tests and frozen B0 pass.
-> WORLD KEYS and exact action args are in the module docstrings and dataset README.
-> Everything assigned for implementation is committed today before my absence.
-
-This is a prepared handoff message; no group-chat message was sent automatically.
